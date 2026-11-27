@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Gọi món · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+    <style>
+      /* the sheets are inline cards in the app; here they sit in a <dialog>, so the card border is dropped */
+      dialog.proto-sheet > form.cancel-sheet {
+        padding: 0;
+        margin: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order/table/:id: one table's order screen (OrderScreen.tsx OrderBody), with CancelSheet, ApprovalChoices,
+      // ReturnSheet and TableMoveSheet as dialogs. Everything happens in memory; nothing is saved.
+      const as = P.param('as', 'waiter');
+      const D = P.D;
+      const tableId = P.param('table', 'S1');
+      const table = P.table(tableId) ?? P.table('S1');
+      const guestsParam = Number(P.param('guests', '0'));
+      // an empty table is opened on order-open.html first; it comes back here with ?guests= and a new session
+      if (table.state === 'empty' && !guestsParam) location.replace(`order-open.html?table=${table.id}&as=${as}`);
+
+      const main = P.frame({ surface: 'order', user: as, title: 'Gọi món' });
+      const area = P.area(table.area);
+      const tier = area.tier === 'AC' ? 'ac' : 'std';
+      const base = P.session(table.id);
+      const session = base
+        ? { ...base, lines: base.lines.map((l) => ({ ...l, cancelled: l.state === 'cancelled' ? l.qty : 0 })) }
+        : { table: table.id, guests: guestsParam, order: 'ĐH-0052', lines: [] };
+      let state = base ? table.state : 'open';
+      const editable = () => state === 'open' || state === 'awaiting_payment';
+      const watchesPrices = as === 'manager' || as === 'owner';
+
+      // ---- inline sample data the page needs beyond data.js ----
+      /** "Phổ biến": the best sellers of the last days (P.D.topItems). */
+      const FREQUENT = D.topItems.map((t) => t.code);
+      /** Cancel and return reasons: the default catalogue (packages/db DEFAULT_CANCEL_REASONS). */
+      const CANCEL_REASONS = [
+        { code: 'customer_cancels', name: 'Khách hủy món' },
+        { code: 'customer_changes', name: 'Khách đổi món' },
+        { code: 'staff_error', name: 'Nhân viên nhập nhầm' },
+        { code: 'out_of_stock', name: 'Hết nguyên liệu' },
+        { code: 'long_wait', name: 'Chờ lâu' },
+        { code: 'customer_unhappy', name: 'Khách không hài lòng' },
+        { code: 'other', name: 'Lý do khác', requiresNote: true },
+      ];
+      const RETURN_REASONS = [
+        { code: 'faulty_returned', name: 'Trả món lỗi' },
+        { code: 'unopened_returned', name: 'Trả đồ chưa mở' },
+      ];
+      /** Groups whose printed items a waiter may cancel without a manager (bia, nước). */
+      const SELF_CANCEL = ['bia', 'nuoc'];
+      /** Managers on shift with an approval PIN. */
+      const APPROVERS = [D.users.manager.name, D.users.owner.name];
+
+      // ---- texts from apps/web/src/shared/messages.ts ----
+      const cm = {
+        cancelLine: 'Hủy món', cancelTitle: (n) => `Hủy món ${n}`, cancelTableAll: 'Hủy cả bàn', cancelTable: 'Hủy bàn',
+        cancelTableTitle: (c) => `Hủy bàn ${c}`,
+        cancelTableItemsHelp: 'Hủy tất cả món còn lại của bàn. Món đã in sẽ có phiếu hủy gửi tới bếp, quầy.',
+        cancelTableEmptyHelp: 'Bàn chưa gửi món nào. Hủy thì bàn trống lại và không tính khách.',
+        quantity: 'Số lượng hủy', live: (n) => `Còn ${n}`, reason: 'Lý do', note: 'Ghi chú (không bắt buộc)',
+        noteRequired: 'Ghi chú (bắt buộc với lý do này)', needReason: 'Hãy chọn lý do hủy.', needNote: 'Lý do này cần ghi chú.',
+        badQuantity: (l) => `Số lượng hủy phải lớn hơn 0 và không quá ${l}.`, confirm: 'Xác nhận hủy', back: 'Quay lại',
+        cancelling: 'Đang hủy', cancelledLine: (q) => `Đã hủy ${q}`,
+        needsApproval: { cause: 'Món này đã in cho bếp nên chưa hủy được.', remedy: 'Nhờ quản lý hủy, hoặc duyệt giúp. Chưa có gì bị hủy.' },
+      };
+      const am = {
+        pending: 'Chờ duyệt hủy', title: 'Cần quản lý duyệt',
+        help: 'Món đã in cho bếp. Quản lý nhập mã duyệt của mình ngay tại đây, hoặc gửi yêu cầu cho các quản lý đang trực.',
+        pinLegend: 'Quản lý nhập mã duyệt', pinLabel: 'Mã duyệt (6 số)', approveWithPin: 'Duyệt bằng mã',
+        sendRequest: 'Gửi yêu cầu cho quản lý', requestSent: 'Đã gửi yêu cầu. Món vẫn tính tiền cho tới khi quản lý duyệt.',
+        needSix: 'Mã duyệt gồm đúng 6 chữ số.', needApprover: 'Hãy chọn người duyệt.',
+      };
+      const rm = {
+        returnLine: 'Trả món', title: (n) => `Trả món ${n}`, action: 'Loại trả',
+        actions: {
+          return_item: { name: 'Món lỗi đã ra', help: 'Khách trả món đã ra vì lỗi. Món không tính tiền, phần còn lại vẫn tính.' },
+          return_unopened: { name: 'Đồ chưa mở', help: 'Bia, nước, khăn lạnh, đậu phộng chưa mở. Vẫn tính tiền cho tới khi thu ngân xác nhận kho đã nhận.' },
+          return_tank: { name: 'Trả về hồ', help: 'Hải sản sống đã bắt, trả lại hồ. Phiếu in ở hồ và bếp.' },
+        },
+        quantity: 'Số lượng trả', reason: 'Lý do', note: 'Ghi chú (không bắt buộc)',
+        remake: 'Làm lại món này (in phiếu REMAKE, không tính tiền)', needAction: 'Hãy chọn loại trả.', needReason: 'Hãy chọn lý do.',
+        badQuantity: (m) => `Số lượng trả phải lớn hơn 0 và không quá ${m}.`, confirm: 'Xác nhận trả', back: 'Quay lại',
+        needsApproval: { cause: 'Món này cần quản lý cho phép trả.', remedy: 'Quản lý nhập mã duyệt, hoặc gửi yêu cầu. Chưa có gì thay đổi.' },
+        awaiting: 'Chờ kho xác nhận', awaitingHelp: (n) => `Trả ${n} chưa mở. Món vẫn tính tiền cho tới khi kho nhận.`,
+        returnedLine: (q) => `Đã trả ${q}`,
+      };
+      const mv = {
+        open: 'Chuyển / ghép bàn', title: (c) => `Chuyển, ghép bàn ${c}`, mode: 'Việc cần làm',
+        modes: {
+          table: { name: 'Chuyển bàn', help: 'Cả bàn sang một bàn trống. Món, giá và số phiếu giữ nguyên.' },
+          merge: { name: 'Ghép bàn', help: 'Gộp cả bàn vào một bàn đang mở. Hai bàn thành một hóa đơn.' },
+          items: { name: 'Chuyển món', help: 'Chỉ một số món (hoặc một phần số lượng) sang bàn khác. Chỉ thu ngân.' },
+        },
+        target: 'Bàn đến', pick: 'Chọn bàn', emptyGroup: 'Bàn trống', openGroup: 'Bàn đang mở', itemsLegend: 'Món chuyển',
+        itemQuantity: (n) => `Số lượng chuyển của ${n}`, mergeAsk: 'Ghép vào một hóa đơn? Hai bàn sẽ thành một.',
+        confirm: 'Xác nhận', confirmMerge: 'Ghép thành một hóa đơn', back: 'Quay lại', needMode: 'Hãy chọn việc cần làm.',
+        needTarget: 'Hãy chọn bàn đến.', needItems: 'Hãy chọn ít nhất một món và số lượng hợp lệ.',
+        forbidden: { cause: 'Bạn không có quyền làm việc này.', remedy: 'Nhờ thu ngân hoặc quản lý.' },
+      };
+      const states = { empty: 'Trống', open: 'Đang phục vụ', awaiting_payment: 'Chờ thanh toán', bill_printed: 'Đã in hóa đơn' };
+
+      // ---- helpers ----
+      const unaccent = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+      const initials = (s) => unaccent(s).split(/[\s–-]+/).filter(Boolean).map((w) => w[0]).join('');
+      const priceOf = (i) => i[tier];
+      const errorBlock = (p) => `<div role="alert" class="status status-danger"><strong>${p.cause}</strong>${p.remedy}</div>`;
+      const invalid = (text) => `<p role="alert" class="status status-danger">${P.esc(text)}</p>`;
+      const live = (l) => Math.round((l.qty - (l.cancelled || 0) - (l.returned || 0)) * 100) / 100;
+      const total = () => session.lines.reduce((a, l) => a + Math.round(live(l) * l.price), 0);
+      const marketToday = Object.fromEntries(D.todayPrices.map((p) => [p.code, p]));
+
+      // only items with a price at this table's tier are offered; sold-out items are not offered at all (the server
+      // leaves them out of the menu, FR-01.10)
+      const offered = D.items.filter((i) => priceOf(i) != null && !i.soldOut);
+      const groupIds = [...new Set(offered.map((i) => i.group))];
+      let tab = 'frequent';
+      let query = '';
+      let basket = [];
+      let nextKey = 1;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p><a class="back-link" href="order-floor.html?area=${area.id}&as=${as}">Về sơ đồ bàn</a></p>
+        ${
+          watchesPrices
+            ? `<p role="status" class="status status-danger market-banner">Đã quá giờ mở cửa: ${
+                D.todayPrices.filter((p) => !p.confirmed).length
+              } món giá theo chợ chưa có giá hôm nay. Báo kế toán.</p>
+              <section role="alert" aria-label="Phiếu bếp không in được" class="status status-danger print-alert">
+                <strong>Trạm Nướng không in được phiếu</strong>
+                <span>Bàn S3: Ốc giác nướng mỡ hành × 1 (máy in hết giấy).</span>
+                <div class="actions">
+                  <button type="button" data-toast="Đã gửi lệnh in lại phiếu.">In lại</button>
+                  <button type="button" class="secondary" data-toast="Đã xử lý">Đã xử lý</button>
+                  <button type="button" class="secondary" data-go="order-history.html?as=${as}">Lịch sử gửi bếp</button>
+                </div>
+              </section>`
+            : ''
+        }
+        <header class="order-head" id="order-head"></header>
+        <section aria-label="Chọn món">
+          <div class="field">
+            <label for="item-search">Tìm món</label>
+            <input id="item-search" type="search" inputmode="search" autocomplete="off" placeholder="Gõ không dấu, chữ cái đầu hoặc mã món" />
+          </div>
+          <div class="tabs" role="group" aria-label="Nhóm món" id="group-tabs"></div>
+          <div id="item-list"></div>
+        </section>
+        <section aria-labelledby="basket-title" class="basket" id="basket"></section>
+        <section aria-labelledby="sent-title" class="sent" id="sent"></section>`,
+      );
+
+      // ---- header ----
+      function renderHead() {
+        document.getElementById('order-head').innerHTML = `
+          <h2>Bàn ${table.id}</h2>
+          <p class="muted">${area.name} · Đơn ${session.order} · ${session.guests} khách</p>
+          <p><strong>Tạm tính: <span class="money">${P.money(total())}</span></strong>
+          ${state !== 'open' ? ` <span class="chip chip-warning">${states[state]}</span>` : ''}</p>`;
+      }
+
+      // ---- picker ----
+      function renderTabs() {
+        const btn = (id, label) =>
+          `<button type="button" class="chip-button" data-tab-id="${id}" aria-pressed="${query === '' && tab === id}">${label}</button>`;
+        document.getElementById('group-tabs').innerHTML =
+          btn('frequent', 'Phổ biến') + groupIds.map((g) => btn(g, P.group(g).name)).join('');
+      }
+      function visibleItems() {
+        const q = unaccent(query.trim());
+        if (q)
+          return offered.filter(
+            (i) => unaccent(i.name).includes(q) || i.code.toLowerCase().startsWith(q) || initials(i.name).startsWith(q.replace(/\s/g, '')),
+          );
+        if (tab === 'frequent') return FREQUENT.map(P.item).filter((i) => offered.includes(i));
+        return offered.filter((i) => i.group === tab);
+      }
+      function renderItems() {
+        const list = visibleItems();
+        const box = document.getElementById('item-list');
+        if (list.length === 0) {
+          box.innerHTML = `<section class="invitation"><h3>Không có món phù hợp</h3><p>Thử gõ ít chữ hơn hoặc xem tab Tất cả.</p></section>`;
+          return;
+        }
+        box.innerHTML = `<ul class="items" aria-label="Danh sách món">${list
+          .map((i) => {
+            const mk = marketToday[i.code];
+            return `<li><button type="button" class="item-row" data-add="${i.code}">
+              <span><strong><span class="sr-only">Thêm </span>${P.esc(i.name)}</strong><small>${i.code}</small></span>
+              <span class="item-price"><span class="money">${P.money(priceOf(i))}</span>
+                ${mk && mk.confirmed ? `<small>Giá hôm nay · cập nhật ${mk.at}</small>` : ''}
+                ${mk && !mk.confirmed ? `<small class="chip chip-warning">Giá chưa xác nhận</small>` : ''}
+              </span></button></li>`;
+          })
+          .join('')}</ul>`;
+      }
+
+      // ---- basket ("Chưa gửi") ----
+      function renderBasket() {
+        const rows = basket
+          .map((l) => {
+            const i = P.item(l.code);
+            const notes = P.group(i.group).notes;
+            const qty =
+              i.unit === 'kg'
+                ? `<input type="number" inputmode="decimal" step="0.01" min="0.01" aria-label="Số lượng ${P.esc(i.name)}" value="${l.qty}" data-weight="${l.key}" />`
+                : `<span class="stepper">
+                    <button type="button" class="secondary" data-step="${l.key}" data-by="-1" aria-label="${l.qty === 1 ? 'Bỏ' : 'Bớt một'} ${P.esc(i.name)}">−</button>
+                    <output aria-label="Số lượng ${P.esc(i.name)}">${l.qty}</output>
+                    <button type="button" class="secondary" data-step="${l.key}" data-by="1" aria-label="Thêm một ${P.esc(i.name)}">+</button>
+                  </span>`;
+            return `<li class="basket-line">
+              <div class="basket-main">
+                <strong>${P.esc(i.name)}</strong>
+                <span class="chip chip-warning">Chưa gửi</span>
+                ${qty}
+                <button type="button" class="link-button" data-note-toggle="${l.key}" aria-expanded="${l.editing}">Ghi chú</button>
+              </div>
+              ${
+                l.editing
+                  ? `<div class="note-editor"><div class="tabs">${notes
+                      .map((n) => `<button type="button" class="chip-button" data-note="${l.key}" data-text="${P.esc(n)}" aria-pressed="${l.note === n}">${P.esc(n)}</button>`)
+                      .join('')}</div>
+                    <input type="text" maxlength="200" aria-label="Ghi chú cho ${P.esc(i.name)}" placeholder="Ví dụ: ít cay, không hành" value="${P.esc(l.note)}" data-note-input="${l.key}" /></div>`
+                  : ''
+              }
+            </li>`;
+          })
+          .join('');
+        document.getElementById('basket').innerHTML = `
+          <h3 id="basket-title">Chưa gửi</h3>
+          ${basket.length === 0 ? `<p class="muted">Chạm một món để thêm vào đây.</p>` : `<ul class="basket-lines">${rows}</ul>`}
+          <button type="button" class="send" id="send" ${basket.length === 0 ? 'disabled' : ''}>Gửi ${basket.length} món</button>`;
+      }
+
+      // ---- sent rounds ----
+      function renderSent() {
+        const rounds = [...new Set(session.lines.map((l) => l.round))];
+        const hasLive = session.lines.some((l) => live(l) > 0);
+        const lineRows = (l, idx) => {
+          const i = P.item(l.code);
+          const n = live(l);
+          let row = '';
+          if (n > 0) {
+            const chip = l.approval
+              ? `<span class="chip chip-warning">${am.pending}</span>`
+              : l.state === 'queued'
+                ? `<span class="chip chip-warning">Đang chờ in</span>`
+                : `<span class="chip chip-ok">Đã gửi</span>`;
+            const actions =
+              editable() && !l.approval
+                ? `<button type="button" class="secondary row-action" data-cancel="${idx}" aria-label="Hủy món ${P.esc(i.name)}">${cm.cancelLine}</button>
+                   <button type="button" class="secondary row-action" data-return="${idx}" aria-label="Trả món ${P.esc(i.name)}">${rm.returnLine}</button>`
+                : '';
+            const mk = marketToday[l.code];
+            row = `<li><span>${P.qty(n)} × ${P.esc(i.name)}${l.note ? `<small> · ${P.esc(l.note)}</small>` : ''}</span>
+              ${mk && !mk.confirmed ? `<span class="chip chip-warning">Giá chưa xác nhận</span>` : ''}
+              ${l.awaiting ? `<span class="chip chip-warning">${rm.awaiting}</span>` : ''}
+              ${chip}${actions}</li>`;
+          }
+          const gone = (l.cancelled || 0) + (l.returned || 0);
+          const struck = gone
+            ? `<li class="cancelled-line"><s>${P.qty(gone)} × ${P.esc(i.name)}</s>
+                ${l.cancelled ? `<span class="chip chip-danger">${cm.cancelledLine(P.qty(l.cancelled))}${l.cancelReason ? ` · ${P.esc(l.cancelReason)}` : ''}</span>` : ''}
+                ${l.returned ? `<span class="chip chip-danger">${rm.returnedLine(P.qty(l.returned))}</span>` : ''}</li>`
+            : '';
+          return row + struck;
+        };
+        document.getElementById('sent').innerHTML = `
+          <h3 id="sent-title">Đã gửi bếp</h3>
+          ${
+            session.lines.length === 0
+              ? `<p class="muted">Chưa gửi món nào.</p>`
+              : rounds
+                  .map(
+                    (r) => `<div><h4>Lượt ${r}</h4><ul class="sent-lines">${session.lines
+                      .map((l, idx) => (l.round === r ? lineRows(l, idx) : ''))
+                      .join('')}</ul></div>`,
+                  )
+                  .join('')
+          }
+          ${
+            editable()
+              ? `<section aria-label="${cm.cancelTable}" class="cancel-table">
+                  <p class="muted">${hasLive ? cm.cancelTableItemsHelp : cm.cancelTableEmptyHelp}</p>
+                  <button type="button" class="secondary" data-cancel="table">${hasLive ? cm.cancelTableAll : cm.cancelTable}</button>
+                </section>
+                <button type="button" class="secondary" data-open="dlg-move">${mv.open}</button>`
+              : ''
+          }
+          ${
+            state === 'open' && session.lines.length > 0
+              ? ` <button type="button" class="secondary" data-toast="Đã yêu cầu thanh toán. Quầy thu ngân sẽ thấy đơn này." data-go="order-floor.html?area=${area.id}&as=${as}">Yêu cầu thanh toán</button>`
+              : ''
+          }`;
+      }
+
+      function renderAll() {
+        renderHead();
+        renderTabs();
+        renderItems();
+        renderBasket();
+        renderSent();
+      }
+      renderAll();
+
+      // ---- picker and basket events ----
+      const search = document.getElementById('item-search');
+      search.addEventListener('input', () => {
+        query = search.value;
+        renderTabs();
+        renderItems();
+      });
+      document.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-tab-id],[data-add],[data-step],[data-note-toggle],[data-note],#send,[data-cancel],[data-return]');
+        if (!t) return;
+        if (t.dataset.tabId) {
+          tab = t.dataset.tabId;
+          query = '';
+          search.value = '';
+          renderTabs();
+          renderItems();
+        } else if (t.dataset.add) {
+          const i = P.item(t.dataset.add);
+          const same = basket.find((l) => l.code === i.code && l.note === '' && i.unit !== 'kg');
+          if (same) same.qty += 1;
+          else basket.push({ key: nextKey++, code: i.code, qty: 1, note: '', editing: false });
+          renderBasket();
+        } else if (t.dataset.step) {
+          const l = basket.find((b) => b.key === Number(t.dataset.step));
+          l.qty += Number(t.dataset.by);
+          if (l.qty <= 0) basket = basket.filter((b) => b !== l);
+          renderBasket();
+        } else if (t.dataset.noteToggle) {
+          const l = basket.find((b) => b.key === Number(t.dataset.noteToggle));
+          l.editing = !l.editing;
+          renderBasket();
+        } else if (t.dataset.note) {
+          const l = basket.find((b) => b.key === Number(t.dataset.note));
+          l.note = l.note === t.dataset.text ? '' : t.dataset.text;
+          renderBasket();
+        } else if (t.id === 'send') {
+          if (!editable()) {
+            P.toast('Máy chủ không nhận đợt này. Chưa có món nào được gửi.');
+            return;
+          }
+          // the round goes to the kitchen; an item of the Nướng station waits for its printer (out of paper)
+          const round = Math.max(0, ...session.lines.map((l) => l.round)) + 1;
+          basket.forEach((l) => {
+            const i = P.item(l.code);
+            session.lines.push({
+              code: l.code, qty: l.qty, price: priceOf(i), round, note: l.note || undefined,
+              state: i.stations.includes('nuong') ? 'queued' : 'sent', at: D.premise.now,
+            });
+          });
+          P.toast(`Đã gửi ${basket.length} món tới bếp`);
+          basket = [];
+          renderAll();
+        } else if (t.dataset.cancel) {
+          openCancel(t.dataset.cancel === 'table' ? 'table' : Number(t.dataset.cancel));
+        } else if (t.dataset.return) {
+          openReturn(Number(t.dataset.return));
+        }
+      });
+      document.addEventListener('input', (e) => {
+        const t = e.target;
+        if (t.dataset.noteInput) basket.find((b) => b.key === Number(t.dataset.noteInput)).note = t.value;
+        if (t.dataset.weight) basket.find((b) => b.key === Number(t.dataset.weight)).qty = Number(t.value) || 0.01;
+      });
+
+      // ---- ApprovalChoices (shared/ApprovalChoices.tsx) ----
+      const approvalChoices = () => `
+        <section class="approval-choices" aria-label="${am.title}">
+          <h3>${am.title}</h3>
+          <p class="muted">${am.help}</p>
+          <fieldset class="reasons"><legend>${am.pinLegend}</legend>
+            ${APPROVERS.map((n) => `<label class="check"><input type="radio" name="approver" value="${P.esc(n)}" /><span>${P.esc(n)}</span></label>`).join('')}
+          </fieldset>
+          <div class="field"><label for="approval-pin">${am.pinLabel}</label>
+            <input id="approval-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" /></div>
+          <div class="approval-problem"></div>
+          <div class="actions">
+            <button type="button" data-approve-pin>${am.approveWithPin}</button>
+            <button type="button" class="secondary" data-approve-ask>${am.sendRequest}</button>
+          </div>
+        </section>`;
+      /** Wires the two approval paths of a dialog: PIN on the spot (done at once) or a request (line waits). */
+      function wireApproval(dlg, onPin, onAsk) {
+        dlg.querySelector('[data-approve-pin]').onclick = () => {
+          const who = dlg.querySelector('input[name=approver]:checked');
+          const pin = dlg.querySelector('#approval-pin').value;
+          const box = dlg.querySelector('.approval-problem');
+          if (!who) return (box.innerHTML = invalid(am.needApprover));
+          if (!/^\d{6}$/.test(pin)) return (box.innerHTML = invalid(am.needSix));
+          dlg.close();
+          onPin(who.value);
+        };
+        dlg.querySelector('[data-approve-ask]').onclick = () => {
+          dlg.close();
+          P.toast(am.requestSent);
+          onAsk();
+        };
+      }
+
+      // ---- CancelSheet (shared/CancelSheet.tsx) ----
+      const dlgCancel = document.createElement('dialog');
+      dlgCancel.className = 'proto-sheet';
+      dlgCancel.id = 'dlg-cancel';
+      document.body.appendChild(dlgCancel);
+      function openCancel(target) {
+        const line = target === 'table' ? null : session.lines[target];
+        const name = line ? P.item(line.code).name : '';
+        const title = line ? cm.cancelTitle(name) : cm.cancelTableTitle(table.id);
+        dlgCancel.innerHTML = `
+          <form class="cancel-sheet" aria-label="${P.esc(title)}">
+            <h3>${P.esc(title)}</h3>
+            ${
+              line
+                ? `<div class="field"><label for="cancel-qty">${cm.quantity}</label>
+                    <input id="cancel-qty" inputmode="decimal" autocomplete="off" value="${P.qty(live(line))}" />
+                    <small>${cm.live(P.qty(live(line)))}</small></div>`
+                : ''
+            }
+            <fieldset class="reasons"><legend>${cm.reason}</legend>
+              ${CANCEL_REASONS.map((r) => `<label class="check"><input type="radio" name="cancel-reason" value="${r.code}" /><span>${r.name}</span></label>`).join('')}
+            </fieldset>
+            <div class="field"><label for="cancel-note" id="cancel-note-label">${cm.note}</label>
+              <input id="cancel-note" autocomplete="off" /></div>
+            <div class="sheet-problem"></div>
+            <div class="sheet-approval"></div>
+            <div class="actions">
+              <button type="submit">${cm.confirm}</button>
+              <button type="button" class="secondary" data-close>${cm.back}</button>
+            </div>
+          </form>`;
+        const form = dlgCancel.querySelector('form');
+        form.addEventListener('change', () => {
+          const r = CANCEL_REASONS.find((x) => x.code === form.querySelector('input[name=cancel-reason]:checked')?.value);
+          dlgCancel.querySelector('#cancel-note-label').textContent = r?.requiresNote ? cm.noteRequired : cm.note;
+        });
+        form.onsubmit = (e) => {
+          e.preventDefault();
+          const box = dlgCancel.querySelector('.sheet-problem');
+          const r = CANCEL_REASONS.find((x) => x.code === form.querySelector('input[name=cancel-reason]:checked')?.value);
+          const note = dlgCancel.querySelector('#cancel-note').value.trim();
+          if (!r) return (box.innerHTML = invalid(cm.needReason));
+          if (r.requiresNote && !note) return (box.innerHTML = invalid(cm.needNote));
+          let q = 0;
+          if (line) {
+            q = Number(dlgCancel.querySelector('#cancel-qty').value.replace(',', '.'));
+            if (!(q > 0) || q > live(line) || Math.round(q * 100) / 100 !== q) return (box.innerHTML = invalid(cm.badQuantity(P.qty(live(line)))));
+          }
+          box.innerHTML = '';
+          // a printed item needs a manager, unless the waiter may cancel its group (drinks); a manager cancels at once
+          const printed = (l) => l.state === 'sent' && live(l) > 0;
+          const needs =
+            as === 'waiter' &&
+            (line
+              ? printed(line) && !SELF_CANCEL.includes(P.item(line.code).group)
+              : session.lines.some((l) => printed(l) && !SELF_CANCEL.includes(P.item(l.code).group)));
+          const apply = () => {
+            if (line) {
+              line.cancelled = (line.cancelled || 0) + q;
+              line.cancelReason = r.name;
+              P.toast(cm.cancelledLine(P.qty(q)));
+              renderAll();
+            } else {
+              P.toast(`Đã hủy bàn ${table.id}`);
+              setTimeout(() => (location.href = `order-floor.html?area=${area.id}&as=${as}`), 700);
+            }
+          };
+          if (!needs) {
+            dlgCancel.close();
+            return apply();
+          }
+          box.innerHTML = errorBlock(cm.needsApproval);
+          dlgCancel.querySelector('.sheet-approval').innerHTML = approvalChoices();
+          wireApproval(dlgCancel, apply, () => {
+            (line ? [line] : session.lines.filter((l) => live(l) > 0)).forEach((l) => (l.approval = true));
+            renderAll();
+          });
+        };
+        dlgCancel.showModal();
+      }
+
+      // ---- ReturnSheet (shared/ReturnSheet.tsx) ----
+      const dlgReturn = document.createElement('dialog');
+      dlgReturn.className = 'proto-sheet';
+      dlgReturn.id = 'dlg-return';
+      document.body.appendChild(dlgReturn);
+      function openReturn(idx) {
+        const line = session.lines[idx];
+        const name = P.item(line.code).name;
+        dlgReturn.innerHTML = `
+          <form class="cancel-sheet return-sheet" aria-label="${P.esc(rm.title(name))}">
+            <h3>${P.esc(rm.title(name))}</h3>
+            <fieldset class="reasons"><legend>${rm.action}</legend>
+              ${Object.entries(rm.actions)
+                .map(([k, a]) => `<label class="check"><input type="radio" name="return-action" value="${k}" /><span>${a.name}<small> · ${a.help}</small></span></label>`)
+                .join('')}
+            </fieldset>
+            <div class="field"><label for="return-qty">${rm.quantity}</label>
+              <input id="return-qty" inputmode="decimal" autocomplete="off" value="${P.qty(live(line))}" /></div>
+            <fieldset class="reasons"><legend>${rm.reason}</legend>
+              ${RETURN_REASONS.map((r) => `<label class="check"><input type="radio" name="return-reason" value="${r.code}" /><span>${r.name}</span></label>`).join('')}
+            </fieldset>
+            <div class="field"><label for="return-note">${rm.note}</label><input id="return-note" autocomplete="off" /></div>
+            <label class="check" id="remake" hidden><input type="checkbox" /><span>${rm.remake}</span></label>
+            <div class="sheet-problem"></div>
+            <div class="sheet-approval"></div>
+            <div class="actions">
+              <button type="submit">${rm.confirm}</button>
+              <button type="button" class="secondary" data-close>${rm.back}</button>
+            </div>
+          </form>`;
+        const form = dlgReturn.querySelector('form');
+        const action = () => form.querySelector('input[name=return-action]:checked')?.value;
+        form.addEventListener('change', () => (dlgReturn.querySelector('#remake').hidden = action() !== 'return_item'));
+        form.onsubmit = (e) => {
+          e.preventDefault();
+          const box = dlgReturn.querySelector('.sheet-problem');
+          const reason = form.querySelector('input[name=return-reason]:checked');
+          const q = Number(dlgReturn.querySelector('#return-qty').value.replace(',', '.'));
+          if (!action()) return (box.innerHTML = invalid(rm.needAction));
+          if (!reason) return (box.innerHTML = invalid(rm.needReason));
+          if (!(q > 0) || q > live(line) || Math.round(q * 100) / 100 !== q) return (box.innerHTML = invalid(rm.badQuantity(P.qty(live(line)))));
+          box.innerHTML = '';
+          const apply = () => {
+            if (action() === 'return_unopened') {
+              line.awaiting = true;
+              P.toast(rm.awaitingHelp(P.qty(q)));
+            } else {
+              line.returned = (line.returned || 0) + q;
+              P.toast(rm.returnedLine(P.qty(q)));
+            }
+            renderAll();
+          };
+          // a waiter returning a served dish needs a manager; unopened drinks wait for the store instead
+          if (as === 'waiter' && action() !== 'return_unopened') {
+            box.innerHTML = errorBlock(rm.needsApproval);
+            dlgReturn.querySelector('.sheet-approval').innerHTML = approvalChoices();
+            wireApproval(dlgReturn, apply, () => {
+              line.approval = true;
+              renderAll();
+            });
+            return;
+          }
+          dlgReturn.close();
+          apply();
+        };
+        dlgReturn.showModal();
+      }
+
+      // ---- TableMoveSheet (shared/TableMoveSheet.tsx) ----
+      const dlgMove = document.createElement('dialog');
+      dlgMove.className = 'proto-sheet';
+      dlgMove.id = 'dlg-move';
+      document.body.appendChild(dlgMove);
+      const empties = D.tables.filter((t) => t.state === 'empty' && t.id !== table.id);
+      const opens = D.tables.filter((t) => t.id !== table.id && (t.state === 'open' || t.state === 'awaiting_payment'));
+      dlgMove.innerHTML = `
+        <form class="cancel-sheet move-sheet" aria-label="${mv.title(table.id)}">
+          <h3>${mv.title(table.id)}</h3>
+          <fieldset class="reasons"><legend>${mv.mode}</legend>
+            ${Object.entries(mv.modes)
+              .map(([k, m]) => `<label class="check"><input type="radio" name="move-mode" value="${k}" /><span>${m.name}<small> · ${m.help}</small></span></label>`)
+              .join('')}
+          </fieldset>
+          <div class="field" id="move-target-field" hidden><label for="move-target">${mv.target}</label>
+            <select id="move-target"></select></div>
+          <fieldset class="reasons" id="move-items" hidden><legend>${mv.itemsLegend}</legend></fieldset>
+          <p class="muted" id="move-merge" hidden>${mv.mergeAsk}</p>
+          <div class="sheet-problem"></div>
+          <div class="actions">
+            <button type="submit" id="move-submit">${mv.confirm}</button>
+            <button type="button" class="secondary" data-close>${mv.back}</button>
+          </div>
+        </form>`;
+      const moveForm = dlgMove.querySelector('form');
+      const moveMode = () => moveForm.querySelector('input[name=move-mode]:checked')?.value;
+      moveForm.addEventListener('change', (e) => {
+        if (e.target.name !== 'move-mode') return;
+        const mode = moveMode();
+        const opt = (t, extra) => `<option value="${t.id}">${P.area(t.area).name} · ${t.id}${extra}</option>`;
+        dlgMove.querySelector('#move-target-field').hidden = false;
+        dlgMove.querySelector('#move-target').innerHTML =
+          `<option value="">${mv.pick}</option>` +
+          (mode !== 'merge' ? `<optgroup label="${mv.emptyGroup}">${empties.map((t) => opt(t, '')).join('')}</optgroup>` : '') +
+          (mode !== 'table'
+            ? `<optgroup label="${mv.openGroup}">${opens.map((t) => opt(t, ` · ${P.money(P.sessionTotal(P.session(t.id)))}`)).join('')}</optgroup>`
+            : '');
+        const items = dlgMove.querySelector('#move-items');
+        items.hidden = mode !== 'items';
+        items.innerHTML =
+          `<legend>${mv.itemsLegend}</legend>` +
+          session.lines
+            .map((l, idx) => [l, idx])
+            .filter(([l]) => live(l) > 0)
+            .map(
+              ([l, idx]) => `<div class="field"><label for="move-q-${idx}">${mv.itemQuantity(P.esc(P.item(l.code).name))}</label>
+                <input id="move-q-${idx}" data-move-line="${idx}" inputmode="decimal" autocomplete="off" placeholder="0 – ${P.qty(live(l))}" /></div>`,
+            )
+            .join('');
+        dlgMove.querySelector('#move-merge').hidden = mode !== 'merge';
+        dlgMove.querySelector('#move-submit').textContent = mode === 'merge' ? mv.confirmMerge : mv.confirm;
+        dlgMove.querySelector('.sheet-problem').innerHTML = '';
+      });
+      moveForm.onsubmit = (e) => {
+        e.preventDefault();
+        const box = dlgMove.querySelector('.sheet-problem');
+        const mode = moveMode();
+        const target = dlgMove.querySelector('#move-target').value;
+        if (!mode) return (box.innerHTML = invalid(mv.needMode));
+        if (!target) return (box.innerHTML = invalid(mv.needTarget));
+        if (mode === 'items') {
+          // moving items is the cashier's job (matrix 3.1)
+          if (as === 'waiter' || as === 'manager') return (box.innerHTML = errorBlock(mv.forbidden));
+          const picks = [...dlgMove.querySelectorAll('[data-move-line]')].filter((i) => i.value.trim() !== '');
+          const ok = picks.length > 0 && picks.every((i) => {
+            const n = Number(i.value.replace(',', '.'));
+            return n > 0 && n <= live(session.lines[Number(i.dataset.moveLine)]);
+          });
+          if (!ok) return (box.innerHTML = invalid(mv.needItems));
+        }
+        dlgMove.close();
+        P.toast(`${mv.modes[mode].name}: ${table.id} → ${target}`);
+        if (mode === 'merge') setTimeout(() => (location.href = `order-table.html?table=${target}&as=${as}`), 700);
+        if (mode === 'table') setTimeout(() => (location.href = `order-floor.html?area=${P.table(target).area}&as=${as}`), 700);
+      };
+    </script>
+  </body>
+</html>

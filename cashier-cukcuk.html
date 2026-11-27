@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Nhập CukCuk · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /cashier for the CukCuk entry clerk: CukcukScreen.tsx (next bill large, waiting, held, adjustments, entered),
+      // each bill as BillCard with its lines by CukCuk code. The clerk has one tab only, so no tab buttons and no shift.
+      // ?as=accountant shows the accountant's view (tabs "Tra cứu hóa đơn" / "Nhập CukCuk").
+      const D = P.D;
+      const esc = P.esc;
+      const money = P.money;
+      const as = P.param('as') === 'accountant' ? 'accountant' : 'cukcuk_entry';
+      const main = P.frame({ surface: 'cashier', user: as, title: 'Thu ngân' });
+
+      /* Inline sample data: the lines of the paid bills (consistent with P.D.bills totals; same as cashier-bills.html). */
+      const BILL_LINES = {
+        'HĐ-0024': { lines: [['OH01', 1, 135000], ['SD01', 2, 89000], ['MU02', 1, 125000], ['BS01', 4, 22000]], discount: { code: 'OTHER', amount: 40000 } },
+        'HĐ-0025': { lines: [['LA01', 1, 299000], ['GH01', 1, 520000], ['BT01', 10, 25000], ['RM01', 1, 45000], ['NC01', 3, 18000], ['BM01', 2, 5000]], discount: { code: 'KHACHQUEN50', amount: 50000 } },
+        'HĐ-0026': { lines: [['OH02', 1, 135000], ['SH01', 1, 109000], ['MU01', 1, 145000], ['BH01', 6, 30000], ['HE01', 1, 65000], ['BT01', 4, 25000]] },
+        'HĐ-0027': { version: 2, lines: [] },
+        'HĐ-0028': { lines: [['SD01', 2, 89000], ['SL01', 1, 79000], ['BT01', 4, 25000], ['TD01', 7, 5000]] },
+        'HĐ-0030': { lines: [['CU01', 1.2, 650000], ['OH01', 1, 149000], ['SD01', 2, 98000], ['BH01', 6, 33000], ['NS02', 1, 28000], ['NC01', 1, 20000], ['TD01', 3, 5000]] },
+      };
+      /** Minutes between two "HH:MM" of the same evening. */
+      const minutes = (from, to) => {
+        const m = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+        return m(to) - m(from);
+      };
+      /** Largest-remainder allocation of a bill discount over the lines (what the bill carries per line). */
+      function allocate(total, amounts) {
+        const sum = amounts.reduce((a, b) => a + b, 0);
+        const raw = amounts.map((a) => (sum ? (total * a) / sum : 0));
+        const out = raw.map(Math.floor);
+        let left = total - out.reduce((a, b) => a + b, 0);
+        raw.map((r, i) => [r - Math.floor(r), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => left > 0 && (out[i]++, left--));
+        return out;
+      }
+
+      const rows = D.cukcukQueue.map((q) => {
+        const src = BILL_LINES[q.bill] ?? { lines: [] };
+        const amounts = src.lines.map(([, qty, price]) => Math.round(qty * price));
+        const disc = src.discount ? allocate(src.discount.amount, amounts) : amounts.map(() => 0);
+        const lines = src.lines.map(([code, qty, price], k) => {
+          const it = P.item(code);
+          return { name: it.name, cukcukCode: it.cukcuk, unmapped: !it.cukcuk, qty, price, amount: amounts[k], discount: disc[k] };
+        });
+        return {
+          ...q,
+          id: q.bill,
+          version: src.version ?? 1,
+          waiting: minutes(q.paidAt, D.premise.now),
+          lines,
+          discounts: src.discount ? [src.discount] : [],
+        };
+      });
+      const pending = rows.filter((r) => r.state === 'waiting');
+      const held = rows.filter((r) => r.state === 'held');
+      const adjustments = rows.filter((r) => r.state === 'adjust');
+      const entered = rows.filter((r) => r.state === 'entered').reverse();
+      const billLine = (r) => `${r.bill} · bàn ${r.table}${r.version > 1 ? ` · phiên bản ${r.version}` : ''}`;
+
+      /** BillCard: one bill as the clerk types it into CukCuk. */
+      function card(r, large) {
+        const unmapped = r.lines.filter((l) => l.unmapped).map((l) => l.name);
+        return `<article class="bill-box" aria-label="${esc(billLine(r))}">
+          <h3>${esc(billLine(r))}</h3>
+          <p>
+            <span class="chip chip-state">${r.waiting} phút</span>
+            ${r.late ? '<span class="chip chip-danger">Quá hạn</span>' : ''}
+            ${r.invoice ? `<span class="chip chip-ok">Số CukCuk ${esc(r.invoice)}</span>` : ''}
+          </p>
+          ${r.state === 'held' && r.note ? `<p class="muted">Lý do giữ: ${esc(r.note)}</p>` : ''}
+          ${unmapped.length ? `<p role="status" class="status status-warning">Có món chưa có mã CukCuk: ${esc(unmapped.join(', '))}. Nhập theo tên rồi nhờ kế toán ánh xạ.</p>` : ''}
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Các món của hóa đơn ${esc(r.bill)}">
+            <table class="data">
+              <thead><tr><th scope="col">Món</th><th scope="col">SL</th><th scope="col">Đơn giá</th><th scope="col">Thành tiền</th></tr></thead>
+              <tbody>${r.lines
+                .map(
+                  (l) => `<tr>
+                    <th scope="row">${
+                      l.unmapped
+                        ? `${esc(l.name)} <span class="chip chip-warning">Chưa ánh xạ</span>`
+                        : `<strong>${esc(l.cukcukCode)}</strong> ${esc(l.name)}`
+                    }</th>
+                    <td>${P.qty(l.qty)}</td>
+                    <td>${money(l.price)}</td>
+                    <td>${money(l.amount)}${l.discount > 0 ? `<small> −${money(l.discount)}</small>` : ''}</td>
+                  </tr>`,
+                )
+                .join('')}</tbody>
+            </table>
+          </div>
+          ${r.discounts.map((d) => `<p class="muted">Giảm giá ${esc(d.code)}: −${money(d.amount)}</p>`).join('')}
+          <p><strong>Tổng</strong> <strong class="${large ? 'money checkout-total' : 'money'}">${money(r.total)}</strong></p>
+          <form aria-label="Đã nhập CukCuk ${esc(r.bill)}" data-enter="${esc(r.bill)}">
+            <div class="field">
+              <label for="invoice-${esc(r.bill)}">Số hóa đơn CukCuk</label>
+              <input id="invoice-${esc(r.bill)}" autocomplete="off" value="${esc(r.invoice ?? '')}" />
+            </div>
+            <p class="problem"></p>
+            <div class="actions">
+              <button type="submit">${r.state === 'entered' ? 'Sửa số' : 'Đã nhập CukCuk'}</button>
+              ${r.state === 'waiting' ? `<button type="button" class="secondary" data-hold="${esc(r.bill)}">Giữ lại</button>` : ''}
+              ${r.state === 'held' ? `<button type="button" class="secondary" data-toast="Đã đưa ${esc(r.bill)} lại vào hàng" data-go="cashier-cukcuk.html${as === 'accountant' ? '?as=accountant' : ''}">Đưa lại vào hàng</button>` : ''}
+            </div>
+          </form>
+        </article>`;
+      }
+
+      const next = pending[0] ?? null;
+      const rest = pending.slice(1);
+      main.insertAdjacentHTML(
+        'beforeend',
+        `${
+          as === 'accountant'
+            ? `<div class="actions" role="group" aria-label="Thu ngân">
+                <button type="button" class="secondary" aria-pressed="false" data-go="cashier-bills.html?as=accountant">Tra cứu hóa đơn</button>
+                <button type="button" aria-pressed="true">Nhập CukCuk</button>
+              </div>`
+            : ''
+        }
+        <div class="cukcuk-queue">
+          <h2>Hóa đơn chờ nhập CukCuk</h2>
+          <section aria-label="Hóa đơn kế tiếp">
+            <h3>Hóa đơn kế tiếp</h3>
+            ${next ? card(next, true) : '<p class="muted">Không có hóa đơn nào chờ nhập.</p>'}
+          </section>
+          ${
+            rest.length
+              ? `<section aria-label="Đang chờ (${rest.length})"><h3>Đang chờ (${rest.length})</h3>
+                  <ul class="checkout-rows">${rest.map((r) => `<li><details><summary>${esc(billLine(r))} · ${money(r.total)} · ${r.waiting} phút</summary>${card(r)}</details></li>`).join('')}</ul></section>`
+              : ''
+          }
+          ${held.length ? `<section aria-label="Đang giữ lại (${held.length})"><h3>Đang giữ lại (${held.length})</h3>${held.map((r) => card(r)).join('')}</section>` : ''}
+          ${
+            adjustments.length
+              ? `<section aria-label="Cần chỉnh CukCuk"><h3>Cần chỉnh CukCuk</h3>
+                  <ul>${adjustments.map((r) => `<li>${esc(billLine(r))} <small class="muted">· ${money(r.total)} · ${esc(r.note ?? '')}</small></li>`).join('')}</ul></section>`
+              : ''
+          }
+          ${
+            entered.length
+              ? `<section aria-label="Đã nhập gần đây"><h3>Đã nhập gần đây</h3>
+                  <ul class="checkout-rows">${entered.map((r) => `<li><details><summary>${esc(billLine(r))} · Số CukCuk ${esc(r.invoice)}</summary>${card(r)}</details></li>`).join('')}</ul></section>`
+              : ''
+          }
+        </div>
+        <dialog id="dlg-hold" class="proto-sheet">
+          <form class="cancel-sheet" aria-label="Giữ lại">
+            <h3 id="hold-title">Giữ lại</h3>
+            <p class="muted">Hóa đơn ra khỏi hàng chờ cho tới khi đưa lại vào hàng.</p>
+            <div class="field"><label for="hold-reason">Lý do (bắt buộc)</label><input id="hold-reason" autocomplete="off" /></div>
+            <p id="hold-problem"></p>
+            <div class="actions">
+              <button type="submit">Giữ lại</button>
+              <button type="button" class="secondary" data-close>Quay lại</button>
+            </div>
+          </form>
+        </dialog>`,
+      );
+
+      // entering the CukCuk invoice number (the server refuses a number already used for another bill)
+      const used = rows.filter((r) => r.invoice).map((r) => [r.invoice, r.bill]);
+      document.addEventListener('submit', (e) => {
+        const f = e.target.closest('[data-enter]');
+        if (!f) return;
+        e.preventDefault();
+        const bill = f.dataset.enter;
+        const v = f.querySelector('input').value.trim();
+        const p = f.querySelector('.problem');
+        p.className = 'problem';
+        p.innerHTML = '';
+        if (!v) return ((p.className = 'status status-danger'), (p.textContent = 'Hãy nhập số hóa đơn CukCuk.'));
+        if (used.some(([no, b]) => no.toLowerCase() === v.toLowerCase() && b !== bill))
+          return (p.innerHTML =
+            '<div role="alert" class="status status-danger"><strong>Số hóa đơn này đã ghi cho hóa đơn khác.</strong>Kiểm tra lại số trong CukCuk.</div>');
+        P.toast(`${bill}: Số CukCuk ${v}`);
+        setTimeout(() => (location.href = location.href), 900);
+      });
+      // hold
+      let holding = null;
+      document.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-hold]');
+        if (!b) return;
+        holding = b.dataset.hold;
+        document.getElementById('hold-title').textContent = `Giữ lại ${holding}`;
+        document.getElementById('hold-reason').value = '';
+        document.getElementById('hold-problem').textContent = '';
+        document.getElementById('dlg-hold').showModal();
+      });
+      document.querySelector('#dlg-hold form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const p = document.getElementById('hold-problem');
+        if (!document.getElementById('hold-reason').value.trim())
+          return ((p.className = 'status status-danger'), (p.textContent = 'Hãy nhập lý do.'));
+        document.getElementById('dlg-hold').close();
+        P.toast(`Đã giữ lại ${holding}`);
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Tra cứu hóa đơn · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+    <style>
+      /* prototype only: a picture of the 80 mm paper the reprint produces (the real one is ESC/POS raster) */
+      .proto-paper {
+        max-width: 320px;
+        margin: 12px auto;
+        padding: 12px 16px;
+        font: 0.85rem/1.4 ui-monospace, Consolas, monospace;
+        color: #000;
+        background: #fff;
+        border: 1px dashed #888;
+      }
+      .proto-paper p { margin: 0; display: flex; justify-content: space-between; gap: 8px; }
+      .proto-paper .c { justify-content: center; text-align: center; }
+      .proto-paper hr { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
+      .proto-paper .big { font-weight: 700; font-size: 1rem; }
+    </style>
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /cashier, tab "Tra cứu hóa đơn": BillsScreen.tsx (search, list, Detail with reprint, and the ActionSheet +
+      // OwnerApproval for reopen / cancel a paid bill / uncollectable), with ShiftStrip.tsx above.
+      // The cashier only reprints (matrix 3.1); ?as=accountant shows the accountant's bill control.
+      const D = P.D;
+      const esc = P.esc;
+      const money = P.money;
+      const as = P.param('as', 'cashier') === 'accountant' ? 'accountant' : 'cashier';
+      const main = P.frame({ surface: 'cashier', user: as, title: 'Thu ngân' });
+      const canControl = as === 'accountant';
+
+      /* Inline sample data: the lines of the bills paid earlier tonight (their sessions are closed, so data.js has
+         none); they add up to the totals in P.D.bills. Waiters as on the bills. */
+      const PAID_LINES = {
+        'HĐ-0024': { waiter: 'Đỗ Thị Lan', lines: [['OH01', 1, 135000], ['SD01', 2, 89000], ['MU02', 1, 125000], ['BS01', 4, 22000]],
+          discount: { code: 'OTHER', amount: 40000 } },
+        'HĐ-0025': { waiter: 'Nguyễn Văn Tùng', lines: [['LA01', 1, 299000], ['GH01', 1, 520000], ['BT01', 10, 25000], ['RM01', 1, 45000], ['NC01', 3, 18000], ['BM01', 2, 5000]],
+          discount: { code: 'KHACHQUEN50', amount: 50000 } },
+        'HĐ-0026': { waiter: 'Nguyễn Văn Tùng', lines: [['OH02', 1, 135000], ['SH01', 1, 109000], ['MU01', 1, 145000], ['BH01', 6, 30000], ['HE01', 1, 65000], ['BT01', 4, 25000], ['LA01', 1, 299000, true]] },
+        'HĐ-0027': { waiter: 'Hoàng Minh Khoa', version: 2, lines: [['SD01', 2, 89000, true], ['SL01', 1, 79000, true], ['BT01', 4, 25000, true], ['TD01', 7, 5000, true]] },
+        'HĐ-0028': { waiter: 'Hoàng Minh Khoa', lines: [['SD01', 2, 89000], ['SL01', 1, 79000], ['BT01', 4, 25000], ['TD01', 7, 5000]] },
+        'HĐ-0030': { waiter: 'Đỗ Thị Lan', lines: [['CU01', 1.2, 650000], ['OH01', 1, 149000], ['SD01', 2, 98000], ['BH01', 6, 33000], ['NS02', 1, 28000], ['NC01', 1, 20000], ['TD01', 3, 5000]] },
+      };
+      const METHOD = { cash: 'Tiền mặt', transfer: 'Chuyển khoản', card: 'Thẻ ngân hàng' };
+      const STATES = {
+        printed: 'Đã in, chưa thu',
+        paid: 'Đã thanh toán',
+        superseded: 'Đã thay bằng phiên bản mới',
+        cancelled: 'Đã hủy sau khi thanh toán',
+        uncollectable: 'Không thu được',
+      };
+      const CUKCUK = (state) => (state === 'entered' ? 'Đã vào CukCuk' : state === 'held' ? 'Đang giữ, chưa vào CukCuk' : 'Chờ vào CukCuk');
+
+      const bills = D.bills
+        .map((b) => {
+          const s = Object.values(D.sessions).find((x) => x.bill === b.no);
+          const extra = PAID_LINES[b.no] ?? {};
+          const lines = s
+            ? s.lines.filter((l) => l.state !== 'cancelled').map((l) => ({ name: P.item(l.code).name, qty: l.qty, amount: P.lineAmount(l) }))
+            : extra.lines.map(([code, qty, price, cancelled]) => ({ name: P.item(code).name, qty, amount: Math.round(qty * price), cancelled }));
+          const q = D.cukcukQueue.find((x) => x.bill === b.no);
+          return { ...b, waiter: s ? s.waiter : extra.waiter, version: extra.version ?? 1, lines, discount: s?.discount ? { code: s.discount.programme, amount: s.discount.amount } : extra.discount, cukcuk: q };
+        })
+        .reverse();
+
+      const fold = (v) => String(v).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim();
+      const st = { selected: P.param('bill'), filter: { table: '', billNo: '', waiter: '' }, note: null };
+
+      const strip = `<section aria-labelledby="shift-title" class="shift-strip">
+          <h3 id="shift-title">Ca làm việc</h3>
+          <p role="status">Ca ${esc(D.shifts[0].name.replace(/^Ca /, ''))}, bạn mở lúc ${D.shifts[0].opened}</p>
+          <div class="actions"><button type="button" data-go="cashier.html">Đóng ca</button></div>
+        </section>`;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="actions" role="group" aria-label="Thu ngân">
+          ${
+            canControl
+              ? `<button type="button" aria-pressed="true">Tra cứu hóa đơn</button>
+                 <button type="button" class="secondary" aria-pressed="false" data-go="cashier-cukcuk.html?as=accountant">Nhập CukCuk</button>`
+              : `<button type="button" class="secondary" aria-pressed="false" data-go="cashier.html">Thanh toán</button>
+                 <button type="button" aria-pressed="true">Tra cứu hóa đơn</button>`
+          }
+        </div>
+        ${canControl ? '' : strip}
+        <p class="muted"><small>Prototype: ${
+          canControl
+            ? 'đang xem như kế toán (mở lại, hủy, không thu được). <a href="cashier-bills.html">Xem như thu ngân</a>'
+            : 'thu ngân chỉ in lại. <a href="cashier-bills.html?as=accountant&bill=HĐ-0027">Xem như kế toán</a> để mở lại, hủy hóa đơn, không thu được.'
+        }</small></p>
+        <div class="checkout">
+          <section aria-labelledby="bills-title" class="checkout-list">
+            <h2 id="bills-title">Tra cứu hóa đơn</h2>
+            <form aria-label="Tìm hóa đơn" id="search">
+              <div class="field"><label for="bills-table">Bàn</label><input id="bills-table" autocomplete="off" /></div>
+              <div class="field"><label for="bills-billNo">Số hóa đơn</label><input id="bills-billNo" autocomplete="off" /></div>
+              <div class="field"><label for="bills-waiter">Người phục vụ</label><input id="bills-waiter" autocomplete="off" /></div>
+              <button type="submit">Tìm</button>
+            </form>
+            <div id="results"></div>
+          </section>
+          <section aria-live="polite" class="checkout-detail" id="detail"></section>
+        </div>
+        <dialog id="dlg-reprint" class="proto-sheet"></dialog>
+        <dialog id="dlg-action" class="proto-sheet"></dialog>`,
+      );
+
+      function renderList() {
+        const f = st.filter;
+        const list = bills.filter(
+          (b) =>
+            (!f.table || fold(b.table).includes(fold(f.table))) &&
+            (!f.billNo || fold(b.no).replace(/\D/g, '').includes(fold(f.billNo).replace(/\D/g, '')) || fold(b.no).includes(fold(f.billNo))) &&
+            (!f.waiter || fold(b.waiter).includes(fold(f.waiter))),
+        );
+        document.getElementById('results').innerHTML =
+          list.length === 0
+            ? '<p class="muted">Không có hóa đơn nào khớp.</p>'
+            : `<ul aria-label="Kết quả tìm hóa đơn" class="checkout-rows">${list
+                .map(
+                  (b) => `<li><button type="button" class="checkout-row" aria-pressed="${b.no === st.selected}" data-bill="${esc(b.no)}">
+                    <span class="checkout-code">${esc(b.no)} · phiên bản ${b.version}</span>
+                    <span class="muted">Bàn ${esc(b.table)} · ${esc(b.waiter)}</span>
+                    <span class="chip chip-state">${STATES[b.state]}</span>
+                    <span class="money">${money(b.total)}</span>
+                  </button></li>`,
+                )
+                .join('')}</ul>`;
+      }
+
+      function renderDetail() {
+        const box = document.getElementById('detail');
+        const b = bills.find((x) => x.no === st.selected);
+        if (!b) return (box.innerHTML = '');
+        const adjust = b.state === 'cancelled' ? 'needed' : null;
+        const payments =
+          b.state === 'printed'
+            ? []
+            : b.state === 'cancelled'
+              ? [`${METHOD[b.method]}: ${money(b.total)}`, `Hoàn ${METHOD[b.method]}: ${money(b.total)}`]
+              : [`${METHOD[b.method]}: ${money(b.total)}`];
+        box.innerHTML = `<section aria-label="Chi tiết hóa đơn" class="bill-box">
+          <h3>${esc(b.no)} · phiên bản ${b.version}</h3>
+          <p><span class="chip chip-state">${STATES[b.state]}</span>
+            ${adjust ? '<span class="chip chip-warning">Cần chỉnh CukCuk</span>' : ''}</p>
+          ${b.note ? `<p class="muted">${esc(b.note)}</p>` : ''}
+          ${b.cukcuk && b.state !== 'cancelled' ? `<p class="muted">${CUKCUK(b.cukcuk.state)}${b.cukcuk.invoice ? ` (Số CukCuk ${esc(b.cukcuk.invoice)})` : ''}</p>` : ''}
+          <h4>Các món</h4>
+          <ul>${b.lines
+            .map((l) => `<li${l.cancelled ? ' style="text-decoration: line-through"' : ''}>${P.qty(l.qty)} × ${esc(l.name)} <span class="money">${money(l.amount)}</span></li>`)
+            .join('')}</ul>
+          ${b.discount ? `<p class="muted">Giảm giá ${esc(b.discount.code)}: -${money(b.discount.amount)}</p>` : ''}
+          <p><strong>${money(b.total)}</strong></p>
+          <h4>Thanh toán</h4>
+          <ul>${payments.map((p) => `<li>${p}</li>`).join('')}</ul>
+          ${st.note ? `<p role="status" class="status status-ok">${esc(st.note)}</p>` : ''}
+          <div class="actions">
+            <button type="button" class="secondary" data-act="reprint">In lại hóa đơn</button>
+            ${canControl && b.state === 'paid' ? '<button type="button" class="secondary" data-act="reopen">Mở lại hóa đơn</button>' : ''}
+            ${canControl && b.state === 'paid' ? '<button type="button" class="secondary" data-act="cancel">Hủy hóa đơn</button>' : ''}
+            ${canControl && b.state === 'printed' ? '<button type="button" class="secondary" data-act="uncollectable">Không thu được</button>' : ''}
+          </div>
+          ${
+            canControl && adjust
+              ? `<div class="field">
+                  <label for="adjust-no">Số hóa đơn điều chỉnh</label>
+                  <input id="adjust-no" autocomplete="off" />
+                  <div class="actions">
+                    <button type="button" data-act="adjust-save">Ghi nhận đã chỉnh</button>
+                    <button type="button" class="secondary" data-toast="Chờ kế toán chỉnh CukCuk">Chờ chỉnh</button>
+                  </div>
+                </div>`
+              : ''
+          }
+        </section>`;
+      }
+
+      /** BR-11: a reprint carries "REPRINT — copy n", n counting the reprints of this version. */
+      function openReprint(b) {
+        const copy = b.copies; // copies = prints so far, so this reprint is copy n = copies
+        const dlg = document.getElementById('dlg-reprint');
+        dlg.innerHTML = `<h2>In lại hóa đơn</h2>
+          <p class="muted">Bản in lại ghi rõ là bản in lại và được ghi vào nhật ký.</p>
+          <div class="proto-paper" aria-label="Bản in lại">
+            <p class="c big">${esc(D.tenant.legalName)}</p>
+            <p class="c">${esc(D.premise.address)}</p>
+            <p class="c">MST: ${esc(D.tenant.taxCode)}</p><hr />
+            <p><span>Hóa đơn ${esc(b.no)}${b.version > 1 ? ` (phiên bản ${b.version})` : ''}</span><span>${b.at}</span></p>
+            <p><span>${esc(D.premise.name)}</span><span>${esc(P.area(P.table(b.table)?.area ?? 'san')?.name ?? '')}</span></p>
+            <p class="c big">BÀN ${esc(b.table)} · THANH TOÁN</p>
+            <p>Thu ngân: ${esc(b.cashier)}</p>
+            <p><strong>REPRINT — copy ${copy} lúc: ${D.premise.now} 27/11</strong></p><hr />
+            ${b.lines.filter((l) => !l.cancelled).map((l) => `<p><span>${esc(l.name)} ${P.qty(l.qty)}</span><span>${money(l.amount)}</span></p>`).join('')}<hr />
+            ${b.discount ? `<p><span>Giảm giá ${esc(b.discount.code)}</span><span>-${money(b.discount.amount)}</span></p>` : ''}
+            <p class="big"><span>TỔNG CỘNG</span><span>${money(b.total)}</span></p><hr />
+            <p class="c">Cảm ơn quý khách</p>
+          </div>
+          <div class="proto-actions">
+            <button type="button" data-close data-act-reprint>In lại hóa đơn</button>
+            <button type="button" class="secondary" data-close>Quay lại</button>
+          </div>`;
+        dlg.querySelector('[data-act-reprint]').addEventListener('click', () => {
+          b.copies++;
+          st.note = 'Đã gửi lệnh in lại.';
+          renderDetail();
+        });
+        dlg.showModal();
+      }
+
+      /** ActionSheet: the reason first; for the accountant the server asks for the owner's approval (OwnerApproval). */
+      function openAction(b, action) {
+        const T = {
+          reopen: ['Mở lại hóa đơn đã thanh toán', 'Hóa đơn được hoàn tiền, bàn mở lại để sửa món; in hóa đơn mới sẽ cùng số, phiên bản kế tiếp.'],
+          cancel: ['Hủy hóa đơn đã thanh toán', 'Tạo phiên bản mới đã hủy toàn bộ món và ghi hoàn tiền theo hình thức đã thu.'],
+          uncollectable: ['Đóng hóa đơn là không thu được', 'Khách không trả tiền. Món đã bán vẫn tính doanh thu, không vào CukCuk.'],
+        };
+        const DONE = {
+          reopen: 'Đã mở lại. Bàn sẵn sàng để sửa món.',
+          cancel: 'Đã hủy hóa đơn và ghi hoàn tiền.',
+          uncollectable: 'Đã đóng hóa đơn là không thu được.',
+        };
+        const dlg = document.getElementById('dlg-action');
+        dlg.innerHTML = `<form class="cancel-sheet" aria-label="${T[action][0]}">
+            <h3>${T[action][0]}</h3>
+            <p class="muted">${esc(b.no)} · ${money(b.total)} — ${T[action][1]}</p>
+            <div class="field"><label for="bill-reason">Lý do (bắt buộc)</label><input id="bill-reason" autocomplete="off" /></div>
+            <div id="reason-problem"></div>
+            <div class="actions">
+              <button type="submit">Xác nhận</button>
+              <button type="button" class="secondary" data-close>Quay lại</button>
+            </div>
+          </form>
+          <div id="owner"></div>`;
+        const finish = (text) => {
+          dlg.close();
+          st.note = text;
+          renderDetail();
+          P.toast(text);
+        };
+        dlg.querySelector('form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const reason = dlg.querySelector('#bill-reason').value.trim();
+          const prob = dlg.querySelector('#reason-problem');
+          if (!reason) return (prob.innerHTML = '<p role="alert" class="status status-danger">Hãy nhập lý do.</p>');
+          prob.innerHTML = '';
+          dlg.querySelector('#owner').innerHTML = `<section class="approval-choices" aria-label="Cần chủ quán duyệt">
+            <h3>Cần chủ quán duyệt</h3>
+            <p class="muted">Chủ quán nhập mã duyệt của mình ngay tại đây, hoặc gửi yêu cầu để chủ quán duyệt trong ứng dụng (cùng mạng Wi-Fi của quán).</p>
+            <fieldset class="reasons"><legend>Quản lý nhập mã duyệt</legend>
+              <label class="check"><input type="radio" name="owner" /><span>${esc(D.users.owner.name)}</span></label>
+            </fieldset>
+            <div class="field"><label for="owner-pin">Mã duyệt (6 số)</label>
+              <input id="owner-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" /></div>
+            <p id="owner-problem"></p>
+            <div class="actions">
+              <button type="button" id="owner-approve">Duyệt bằng mã</button>
+              <button type="button" class="secondary" id="owner-ask">Gửi yêu cầu cho chủ quán</button>
+            </div>
+          </section>`;
+          dlg.querySelector('#owner-approve').addEventListener('click', () => {
+            const p = dlg.querySelector('#owner-problem');
+            const bad = (t) => ((p.className = 'status status-danger'), (p.textContent = t));
+            if (!dlg.querySelector('input[name=owner]:checked')) return bad('Hãy chọn người duyệt.');
+            if (!/^\d{6}$/.test(dlg.querySelector('#owner-pin').value)) return bad('Mã duyệt gồm đúng 6 chữ số.');
+            finish(DONE[action]);
+          });
+          dlg.querySelector('#owner-ask').addEventListener('click', () => finish('Đã gửi yêu cầu cho chủ quán. Chưa có gì thay đổi.'));
+        });
+        dlg.showModal();
+      }
+
+      document.getElementById('search').addEventListener('submit', (e) => {
+        e.preventDefault();
+        st.filter = {
+          table: document.getElementById('bills-table').value,
+          billNo: document.getElementById('bills-billNo').value,
+          waiter: document.getElementById('bills-waiter').value,
+        };
+        st.selected = null;
+        renderList();
+        renderDetail();
+      });
+      document.getElementById('results').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-bill]');
+        if (!b) return;
+        st.selected = b.dataset.bill;
+        st.note = null;
+        renderList();
+        renderDetail();
+      });
+      document.getElementById('detail').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const b = bills.find((x) => x.no === st.selected);
+        const act = btn.dataset.act;
+        if (act === 'reprint') return openReprint(b);
+        if (act === 'adjust-save') {
+          const v = document.getElementById('adjust-no').value.trim();
+          if (!v) return P.toast('Hãy nhập số hóa đơn điều chỉnh');
+          return P.toast(`Đã chỉnh CukCuk (${v})`);
+        }
+        openAction(b, act);
+      });
+
+      renderList();
+      renderDetail();
+    </script>
+  </body>
+</html>

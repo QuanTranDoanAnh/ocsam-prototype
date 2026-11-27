@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Nhân viên cơ sở · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order/staff: the manager locks a leaver at once, or releases a lock (StaffScreen.tsx, ADR-013). In memory only.
+      const as = P.param('as', 'manager');
+      const D = P.D;
+      const main = P.frame({ surface: 'order', user: as, title: 'Nhân viên cơ sở' });
+      const ROLE = { owner: 'Chủ cửa hàng', accountant: 'Kế toán (Admin)', manager: 'Quản lý', cashier: 'Thu ngân', waiter: 'Phục vụ', cukcuk_entry: 'Nhập CukCuk' };
+      const STATE = { 'Đang làm': 'active', 'Khóa tại cơ sở': 'lockedPremise', 'Đã nghỉ việc': 'inactive' };
+      // nobody locks themselves; a manager only sees the staff of their own premise
+      const me = D.users[as].name;
+      const people = D.staff
+        .filter((s) => s.name !== me && (as === 'owner' || s.premises !== 'Tất cả'))
+        .map((s, i) => ({ ...s, id: i, st: STATE[s.state] ?? 'active' }));
+      let asking = null;
+      let notice = '';
+      let problem = null;
+
+      const chip = (p) =>
+        p.st === 'inactive'
+          ? `<span class="chip chip-warning">Đã nghỉ</span>`
+          : p.st === 'lockedPremise'
+            ? `<span class="chip chip-warning">Bị khóa tại cơ sở</span>`
+            : `<span class="chip chip-ok">Đang làm</span>`;
+
+      function render() {
+        main.querySelector('#staff').innerHTML = `
+          <div role="status" aria-live="polite">${notice ? `<p class="saved">${notice}</p>` : ''}</div>
+          ${problem ? `<div role="alert" class="status status-danger"><strong>${problem.cause}</strong>${problem.remedy}</div>` : ''}
+          <ul class="cards" aria-label="Danh sách nhân viên">${people
+            .map(
+              (p) => `<li class="card">
+                <div class="card-head"><strong>${P.esc(p.name)}</strong><span class="muted">${ROLE[p.role]} · ${p.phone.replace(/\s/g, '')}</span></div>
+                <p>${chip(p)}</p>
+                ${
+                  p.st === 'lockedPremise'
+                    ? `<button type="button" class="secondary" data-unlock="${p.id}" aria-label="Mở khóa ${P.esc(p.name)}">Mở khóa</button>`
+                    : asking === p.id
+                      ? `<div class="ask">
+                          <div class="field">
+                            <label for="reason-${p.id}">Lý do khóa</label>
+                            <input id="reason-${p.id}" aria-describedby="reason-hint-${p.id}" />
+                            <small id="reason-hint-${p.id}">Bắt buộc, được ghi vào nhật ký.</small>
+                          </div>
+                          <div class="actions">
+                            <button type="button" data-confirm="${p.id}">Khóa tài khoản</button>
+                            <button type="button" class="secondary" data-cancel>Hủy</button>
+                          </div>
+                        </div>`
+                      : `<button type="button" class="secondary" data-lock="${p.id}" aria-label="Khóa ${P.esc(p.name)}" ${p.st === 'inactive' ? 'disabled' : ''}>Khóa</button>`
+                }
+              </li>`,
+            )
+            .join('')}</ul>`;
+        const input = main.querySelector(`#reason-${asking}`);
+        if (input) input.focus();
+      }
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p><a class="back-link" href="order-floor.html?as=${as}">Về gọi món</a></p>
+        <p>Khóa ngay tài khoản người đã nghỉ. Có hiệu lực tức thì, không cần Internet.</p>
+        <div id="staff"></div>`,
+      );
+      render();
+
+      main.querySelector('#staff').addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        problem = null;
+        if (b.dataset.lock) {
+          asking = Number(b.dataset.lock);
+          notice = '';
+        } else if (b.hasAttribute('data-cancel')) {
+          asking = null;
+        } else if (b.dataset.confirm) {
+          const reason = main.querySelector(`#reason-${b.dataset.confirm}`).value.trim();
+          if (!reason) {
+            notice = '';
+            problem = { cause: 'Chưa nhập lý do.', remedy: 'Ghi ngắn gọn vì sao rồi bấm lại.' };
+          } else {
+            people[Number(b.dataset.confirm)].st = 'lockedPremise';
+            asking = null;
+            notice = 'Đã khóa';
+            P.toast('Đã khóa');
+          }
+        } else if (b.dataset.unlock) {
+          people[Number(b.dataset.unlock)].st = 'active';
+          notice = 'Đã mở khóa';
+          P.toast('Đã mở khóa');
+        }
+        render();
+      });
+    </script>
+  </body>
+</html>

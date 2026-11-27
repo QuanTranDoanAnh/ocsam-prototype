@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Bản đồ màn hình · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // Screen map: every page of the prototype, grouped by surface, with the role that uses it.
+      const D = P.D;
+      const SECTIONS = [
+        {
+          title: 'Bắt đầu',
+          intro: 'Đăng nhập rồi vào màn hình của vai trò; ghép máy cho điện thoại mới.',
+          pages: [
+            ['login.html', 'Đăng nhập', 'Mọi vai trò. Có lối vào nhanh theo từng người mẫu.'],
+            ['pair.html', 'Ghép máy', 'Điện thoại mới nhập mã 6 số do văn phòng tạo.'],
+            ['handoff.html', 'Giao nhận', 'Màn hình giữ chỗ, chưa có chức năng.'],
+          ],
+        },
+        {
+          title: 'Gọi món (/order) · điện thoại phục vụ và quản lý',
+          intro: 'Giao diện sáng, cho điện thoại. Thêm ?as=manager vào địa chỉ để xem như quản lý cơ sở.',
+          pages: [
+            ['order-floor.html', 'Sơ đồ bàn', 'Phục vụ. Bàn theo khu, trạng thái bằng màu, chữ và viền.'],
+            ['order-floor.html?as=manager', 'Sơ đồ bàn (quản lý)', 'Quản lý. Có thêm duyệt, món hết, tình trạng, nhân viên.'],
+            ['order-open.html?table=S2', 'Mở bàn', 'Phục vụ. Nhập số khách rồi mở bàn S2.'],
+            ['order-table.html?table=S1', 'Gọi món tại bàn', 'Phục vụ. Thực đơn, giỏ món, gửi bếp, hủy, trả, chuyển bàn.'],
+            ['order-table.html?table=S3', 'Bàn có món chờ in', 'Phục vụ. Món nướng đang chờ vì máy in Nướng hết giấy.'],
+            ['order-history.html', 'Lịch sử gửi bếp', 'Phục vụ, quản lý. Từng phiếu gửi các trạm.'],
+            ['order-approvals.html?as=manager', 'Duyệt hủy món', 'Quản lý, chủ quán. Yêu cầu đang chờ duyệt.'],
+            ['order-table.html?table=T6', 'Bàn đã in hóa đơn', 'Phục vụ. Bàn T6 chờ thu tiền, có giảm giá sinh nhật.'],
+            ['order-availability.html?as=manager', 'Món hết hôm nay', 'Quản lý. Đánh dấu món hết tại cơ sở.'],
+            ['order-health.html?as=manager', 'Tình trạng máy chủ và máy in', 'Quản lý. Máy in, đồng bộ, ổ đĩa, bản sao.'],
+            ['order-staff.html?as=manager', 'Nhân viên', 'Quản lý. Khóa nhân viên tại cơ sở.'],
+          ],
+        },
+        {
+          title: 'Thu ngân (/cashier) · máy quầy',
+          intro: 'Giao diện thanh tiêu đề xanh đậm, cho máy tính ở quầy.',
+          pages: [
+            ['cashier.html', 'Thanh toán: bàn chờ', 'Thu ngân. Ca làm việc và các bàn chờ thanh toán.'],
+            ['cashier.html?shift=closed', 'Mở ca', 'Thu ngân. Khi chưa mở ca: nhập tiền đầu ca.'],
+            ['cashier-table.html?table=S1', 'Thanh toán một bàn', 'Thu ngân. Giảm giá, phiếu kiểm, in hóa đơn, chia hóa đơn.'],
+            ['cashier-table.html?table=T6', 'Hóa đơn đã in, có giảm giá', 'Thu ngân. VietQR, thu tiền mặt, chuyển khoản, thẻ.'],
+            ['cashier-bills.html', 'Tra cứu hóa đơn', 'Thu ngân. Tìm hóa đơn, xem chi tiết, in lại (REPRINT).'],
+            ['cashier-bills.html?as=accountant', 'Kiểm soát hóa đơn', 'Kế toán, chủ quán. Mở lại, hủy hóa đơn đã thu, không thu được; chủ quán duyệt.'],
+            ['cashier-cukcuk.html', 'Hàng chờ nhập CukCuk', 'Nhân viên nhập CukCuk. Nhập số hóa đơn, giữ lại, điều chỉnh.'],
+          ],
+        },
+        {
+          title: 'Văn phòng (/office) · thực đơn và cơ sở',
+          intro: 'Kế toán và chủ quán, trên máy tính. Thanh bên trái dẫn tới mọi trang văn phòng.',
+          pages: [
+            ['office-catalogue.html', 'Danh mục món', 'Kế toán. Món, giá theo bảng giá, trạm in, cần xử lý.'],
+            ['office-item.html', 'Thêm món', 'Kế toán. Biểu mẫu món mới.'],
+            ['office-item.html?code=OH01', 'Sửa món', 'Kế toán. Thông tin món và lịch sử giá.'],
+            ['office-groups.html', 'Nhóm món và ghi chú', 'Kế toán. Nhóm thực đơn và ghi chú nhanh.'],
+            ['office-promotions.html', 'Khuyến mại', 'Kế toán. Danh mục chương trình khuyến mại.'],
+            ['office-cukcuk-map.html', 'Ánh xạ CukCuk', 'Kế toán. Mã món bên CukCuk cho từng món.'],
+            ['office-today-prices.html', 'Giá hôm nay', 'Kế toán, quản lý. Món thời giá và xác nhận giá.'],
+            ['office-import.html', 'Nhập từ Excel', 'Kế toán. Ba bước: chọn tệp, kiểm tra, kết quả.'],
+            ['office-premise.html', 'Thông tin cơ sở', 'Kế toán. Tên, địa chỉ, giờ mở cửa, giờ chốt ngày.'],
+            ['office-areas.html', 'Khu và bàn', 'Kế toán. Khu vực, bảng giá theo khu, bàn.'],
+            ['office-floor-plan.html', 'Sơ đồ bàn', 'Kế toán. Vẽ vị trí bàn trong khu.'],
+            ['office-printers.html', 'Trạm in và máy in', 'Kế toán. Trạm bếp, máy in, trạng thái máy in.'],
+            ['office-bill-settings.html', 'Cài đặt hóa đơn', 'Kế toán. Tài khoản nhận tiền, cách in, logo.'],
+            ['office-devices.html', 'Thiết bị', 'Kế toán. Máy đã đăng ký và mã ghép máy.'],
+            ['office-bill-settings.html', 'Cài đặt vận hành', 'Kế toán. Cùng trang cài đặt hóa đơn: giảm giá thu ngân, CukCuk, số khách, logo.'],
+          ],
+        },
+        {
+          title: 'Văn phòng (/office) · báo cáo, kiểm soát, tài khoản',
+          intro: 'Chủ quán, kế toán và quản lý cơ sở.',
+          pages: [
+            ['office-live.html', 'Trực tiếp', 'Chủ quán. Bàn đang mở, doanh thu hôm nay, tình trạng cơ sở.'],
+            ['office-alerts.html', 'Cảnh báo', 'Chủ quán, kế toán. Cảnh báo và người nhận theo vai trò.'],
+            ['office-sales.html', 'Báo cáo bán hàng', 'Kế toán, quản lý. Bảy báo cáo: theo ca, món, khu, bàn, ngày, hóa đơn, khuyến mại.'],
+            ['office-shifts.html', 'Ca làm việc', 'Kế toán. Khung giờ các ca; doanh thu theo ca ở Báo cáo bán hàng (RP-07).'],
+            ['office-control.html', 'Báo cáo kiểm soát', 'Kế toán, chủ quán. Hủy món, giảm giá, nhật ký.'],
+            ['office-exceptions.html', 'Báo cáo ngoại lệ', 'Kế toán, chủ quán. Rà soát buổi sáng.'],
+            ['office-rp09.html', 'Đối chiếu CukCuk (RP-09)', 'Kế toán. Hóa đơn iOcOrder so với CukCuk.'],
+            ['office-day-close.html', 'Chốt ngày', 'Kế toán. Gói chốt ngày lúc 07:00.'],
+            ['office-accounts.html', 'Nhân viên', 'Kế toán, chủ quán. Tài khoản, khóa, quyền riêng.'],
+            ['office-accounts.html?create=1', 'Thêm nhân viên', 'Kế toán, chủ quán. Biểu mẫu tài khoản mới.'],
+            ['office-permissions.html', 'Phân quyền', 'Kế toán, chủ quán. Bật tắt quyền theo vai trò.'],
+          ],
+        },
+      ];
+
+      const open = Object.values(D.sessions);
+      document.body.insertAdjacentHTML(
+        'afterbegin',
+        `<header class="appbar"><div><strong>iOcOrder</strong><p>Prototype tĩnh · ${P.esc(D.premise.name)} · ${D.premise.businessDay}</p></div>
+           <button type="button" class="secondary" data-go="login.html">Đăng nhập</button></header>
+         <main class="proto-map">
+           <h1>Bản đồ màn hình</h1>
+           <p>Bản mô phỏng tĩnh (HTML, CSS, JS) của các màn hình đã xây dựng trong iOcOrder. Giao diện dùng đúng CSS của ứng dụng;
+              mọi nút đều dẫn sang trang tương ứng hoặc mở hộp thoại. Thao tác ghi dữ liệu chỉ hiện thông báo, không lưu gì.</p>
+           <div class="status status-info">
+             <strong>Dữ liệu mẫu: một buổi tối ở ${P.esc(D.premise.name)}, ${P.esc(D.premise.address)}.</strong>
+             Ngày kinh doanh ${D.premise.businessDay}, bây giờ ${D.premise.now}. ${open.length} bàn đang mở,
+             ${D.items.length} món trong ${D.groups.length} nhóm, ${D.bills.length} hóa đơn trong ngày, máy in Nướng đang hết giấy.
+           </div>
+           ${SECTIONS.map(
+             (s) => `<section><h2>${s.title}</h2><p class="muted">${s.intro}</p>
+               <ul class="proto-grid">${s.pages
+                 .map(([href, title, note]) => `<li><a href="${href}"><strong>${title}</strong><span>${note}</span></a></li>`)
+                 .join('')}</ul></section>`,
+           ).join('')}
+         </main>`,
+      );
+    </script>
+  </body>
+</html>

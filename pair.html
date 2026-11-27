@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Ghép máy · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // A phone that is not registered sees the pairing screen inside the order surface (shared/PairScreen.tsx via
+      // DeviceGate, FR-02.09, ADR-017). Any code is accepted in the prototype; "000000" shows the wrong-code error.
+      const as = P.param('as', 'waiter');
+      const main = P.frame({ surface: 'order', user: as, title: 'Gọi món' });
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<section aria-labelledby="pair-title">
+          <h2 id="pair-title">Máy này chưa đăng ký</h2>
+          <p>Chỉ máy đã đăng ký mới gọi món được. Nhờ kế toán thêm máy trong Văn phòng, rồi nhập mã ghép tại đây khi đang dùng Wi-Fi của nhà hàng.</p>
+          <form class="inline-add" id="pair-form">
+            <div class="field">
+              <label for="pair-code">Mã ghép</label>
+              <input id="pair-code" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="20" />
+            </div>
+            <button type="submit" id="pair-button" disabled>Ghép máy</button>
+          </form>
+          <div id="pair-problem"></div>
+        </section>`,
+      );
+      const code = document.getElementById('pair-code');
+      const button = document.getElementById('pair-button');
+      code.addEventListener('input', () => (button.disabled = code.value.trim() === ''));
+      document.getElementById('pair-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (code.value.trim() === '000000') {
+          document.getElementById('pair-problem').innerHTML =
+            `<div role="alert" class="status status-danger"><strong>Mã sai hoặc đã hết hạn.</strong>Kiểm tra mã, hoặc nhờ kế toán tạo mã mới.</div>`;
+          return;
+        }
+        button.textContent = 'Đang ghép';
+        button.disabled = true;
+        P.toast('Đã ghép máy');
+        setTimeout(() => (location.href = `order-floor.html?as=${as}`), 700);
+      });
+    </script>
+  </body>
+</html>

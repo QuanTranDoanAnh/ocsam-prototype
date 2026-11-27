@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Giá hôm nay · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/today: TodayPricesScreen.tsx with PriceHistoryPanel.tsx under "Lịch sử giá".
+      // Typing the STD price suggests the AC price (+10 %, rounded up to a thousand) unless AC was typed by hand.
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Giá hôm nay', nav: 'today' });
+      const D = P.D;
+      const MARKUP = 10;
+      const fmt = (n) => P.num(n);
+      const parse = (s) => (/^[\d.\s]+$/.test(s.trim()) ? Number(s.replace(/\D/g, '')) : null);
+      const rows = D.todayPrices.map((t) => {
+        const i = P.item(t.code);
+        // the current price per tier: today's when confirmed, else yesterday's
+        const std = t.confirmed ? t.today : t.yesterday;
+        return { ...t, item: i, cur: { STD: std, AC: i.ac }, soldOut: !!i.soldOut, fields: {} };
+      });
+      const awaiting = () => rows.filter((r) => !r.confirmed).length;
+      const pastOpening = D.premise.now > D.premise.openingTime;
+
+      const historyRows = (r) => {
+        const out = [];
+        if (r.confirmed && r.today !== r.yesterday)
+          out.push([`27/11/2026 ${r.at}`, 'Giá thường', r.yesterday, r.today, r.by, 'Giá hôm nay']);
+        else if (r.confirmed) out.push([`27/11/2026 ${r.at}`, 'Giá thường', r.yesterday, r.today, r.by, 'Giữ nguyên giá hôm qua']);
+        out.push(['26/11/2026 16:02', 'Giá thường', r.yesterday - 20000, r.yesterday, 'Phạm Quốc Huy', 'Giá hôm nay']);
+        if (r.item.ac != null) out.push(['26/11/2026 16:02', 'Phòng lạnh', r.item.ac - 22000, r.item.ac, 'Phạm Quốc Huy', 'Giá hôm nay']);
+        return out;
+      };
+      const money = (v) => (v == null ? 'không bán' : P.money(v));
+      const history = (r) => `<div class="table-scroll" tabindex="0" role="region" aria-label="Bảng lịch sử giá của ${P.esc(r.item.name)}">
+        <table><caption>Lịch sử giá của ${P.esc(r.item.name)}</caption>
+          <thead><tr><th scope="col">Có hiệu lực từ</th><th scope="col">Bảng giá</th><th scope="col" class="num">Giá cũ</th>
+            <th scope="col" class="num">Giá mới</th><th scope="col">Người sửa</th><th scope="col">Lý do</th></tr></thead>
+          <tbody>${historyRows(r)
+            .map((h) => `<tr><td>${h[0]}</td><td>${h[1]}</td><td class="num">${money(h[2])}</td><td class="num">${money(h[3])}</td><td>${P.esc(h[4])}</td><td>${h[5]}</td></tr>`)
+            .join('')}</tbody></table></div>`;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="today-title">
+          <h2 id="today-title">Giá hôm nay</h2>
+          <p class="muted">Nhập giá hôm nay cho các món giá theo chợ. Giá phòng lạnh tự gợi ý thêm ${MARKUP}% (làm tròn đến nghìn) và vẫn sửa được. Lưu một lần là có giá mới cho mọi khu.</p>
+          <p role="status" id="alert"></p>
+          <ul class="today-list" aria-label="Các món giá theo chợ" id="list"></ul>
+          <div id="result"></div>
+          <div class="actions today-actions">
+            <button type="button" id="save" disabled>Lưu giá hôm nay</button>
+            <button type="button" class="secondary" id="keep">Giữ nguyên phần còn lại và lưu</button>
+          </div>
+        </section>`,
+      );
+      const $ = (id) => document.getElementById(id);
+      let open = P.param('history');
+
+      const renderAlert = () => {
+        const n = awaiting();
+        const a = $('alert');
+        a.hidden = n === 0;
+        a.className = `status ${pastOpening ? 'status-danger' : 'status-warning'}`;
+        a.innerHTML = `<strong>${pastOpening ? `Đã quá giờ mở cửa ${D.premise.openingTime}, còn món chưa có giá hôm nay.` : 'Còn món chờ xác nhận giá.'}</strong> ${n} món chưa xác nhận giá hôm nay. Món vẫn bán theo giá hôm qua.`;
+        $('keep').disabled = n === 0 && !entries().length;
+      };
+      const field = (r, tier) => {
+        const cur = r.cur[tier];
+        const id = `p-${r.code}-${tier}`;
+        const f = r.fields[tier];
+        return `<div class="field">
+          <label for="${id}"><span class="sr-only">${P.esc(r.item.name)} </span>${tier}</label>
+          <small>Hôm qua: ${cur == null ? 'không bán' : `${fmt(cur)}đ`}</small>
+          <input id="${id}" inputmode="numeric" autocomplete="off" data-code="${r.code}" data-tier="${tier}" value="${f ? P.esc(f.text) : ''}" placeholder="${cur ? fmt(cur) : ''}" />
+        </div>`;
+      };
+      const invalid = (r) => Object.values(r.fields).some((f) => f.text.trim() && (parse(f.text) === null || parse(f.text) % 1000 !== 0 || parse(f.text) <= 0));
+      const entries = () => rows.filter((r) => Object.values(r.fields).some((f) => f.text.trim()) && !invalid(r));
+      const renderList = () => {
+        $('list').innerHTML = rows
+          .map(
+            (r) => `<li class="today-row ${r.confirmed ? '' : 'today-awaiting'}" data-row="${r.code}">
+              <div class="today-head">
+                <strong>${P.esc(r.item.name)}</strong>
+                <span class="muted">${r.code} · ${r.item.unit}</span>
+                <span class="chip ${r.confirmed ? 'chip-ok' : 'chip-warning'}">${r.confirmed ? 'Đã xác nhận hôm nay' : 'Chờ xác nhận'}</span>
+                ${r.soldOut ? '<span class="chip chip-warning">Hết hôm nay</span>' : ''}
+              </div>
+              <div class="today-fields">${field(r, 'STD')}${field(r, 'AC')}</div>
+              <p role="alert" class="status status-danger" data-invalid ${invalid(r) ? '' : 'hidden'}>${P.esc(r.item.name)}: giá phải là bội số của 1.000đ.</p>
+              <div class="actions">
+                <button type="button" class="secondary" aria-label="Lịch sử giá ${P.esc(r.item.name)}" aria-expanded="${open === r.code}" data-history="${r.code}">Lịch sử giá</button>
+                <button type="button" class="secondary" aria-label="${r.soldOut ? 'Bán lại' : 'Hết hôm nay'} ${P.esc(r.item.name)}" data-toggle="${r.code}">${r.soldOut ? 'Bán lại' : 'Hết hôm nay'}</button>
+              </div>
+              ${open === r.code ? history(r) : ''}
+            </li>`,
+          )
+          .join('');
+        renderAlert();
+      };
+      const refreshState = (r) => {
+        const li = document.querySelector(`[data-row="${r.code}"]`);
+        li.querySelector('[data-invalid]').hidden = !invalid(r);
+        $('save').disabled = entries().length === 0 || rows.some(invalid);
+        renderAlert();
+      };
+      renderList();
+
+      $('list').addEventListener('input', (e) => {
+        const inp = e.target.closest('input[data-code]');
+        if (!inp) return;
+        const r = rows.find((x) => x.code === inp.dataset.code);
+        r.fields[inp.dataset.tier] = { text: inp.value, touched: true };
+        $('result').innerHTML = '';
+        if (inp.dataset.tier === 'STD' && r.cur.AC != null && !r.fields.AC?.touched) {
+          const v = parse(inp.value);
+          const s = v ? Math.ceil((v * (100 + MARKUP)) / 100 / 1000) * 1000 : null;
+          r.fields.AC = { text: s ? fmt(s) : '', touched: false };
+          document.getElementById(`p-${r.code}-AC`).value = r.fields.AC.text;
+        }
+        refreshState(r);
+      });
+      $('list').addEventListener('click', (e) => {
+        const h = e.target.closest('[data-history]');
+        if (h) {
+          open = open === h.dataset.history ? null : h.dataset.history;
+          return renderList();
+        }
+        const t = e.target.closest('[data-toggle]');
+        if (t) {
+          const r = rows.find((x) => x.code === t.dataset.toggle);
+          r.soldOut = !r.soldOut;
+          renderList();
+        }
+      });
+      const save = (keepRest) => {
+        const done = entries();
+        const kept = keepRest ? rows.filter((r) => !r.confirmed && !done.includes(r)).length : 0;
+        done.forEach((r) => {
+          r.confirmed = true;
+          r.cur.STD = parse(r.fields.STD?.text ?? '') ?? r.cur.STD;
+          if (r.fields.AC?.text) r.cur.AC = parse(r.fields.AC.text);
+          r.fields = {};
+          r.at = D.premise.now;
+          r.by = D.users.accountant.name;
+        });
+        if (keepRest) rows.forEach((r) => (r.confirmed = true));
+        renderList();
+        $('save').disabled = true;
+        $('result').innerHTML = `<p role="status" class="status status-ok">Đã lưu ${done.length} món${kept > 0 ? `, giữ nguyên ${kept} món còn lại` : ''}.</p>`;
+      };
+      $('save').addEventListener('click', () => save(false));
+      $('keep').addEventListener('click', () => save(true));
+    </script>
+  </body>
+</html>

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Danh mục món · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/catalogue: CatalogueScreen.tsx (toolbar, filters, ItemRow, PriceCell inline editor, PriceListExport)
+      // with MarkupPanel.tsx as a dialog. ?attention=1 opens on "Cần xử lý" as the import wizard's last step does.
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Danh mục món', nav: 'catalogue' });
+      const D = P.D;
+      const TYPES = { food: 'Đồ ăn', drink: 'Đồ uống' };
+      const fmt = (n) => P.num(n); // formatVnd: no currency sign in the table
+      const unaccent = (s) =>
+        String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
+      const initials = (s) =>
+        unaccent(s)
+          .split(/[^a-z0-9]+/)
+          .filter(Boolean)
+          .map((w) => w[0])
+          .join('');
+      /** searchItems (packages/domain): code, unaccented name, or the initials of the name. */
+      const matches = (q, i) => {
+        const n = unaccent(q.trim());
+        if (!n) return true;
+        return unaccent(i.code).includes(n) || unaccent(i.name).includes(n) || initials(i.name).startsWith(n.replace(/\s+/g, ''));
+      };
+      /** Issues as the API computes them: no station, a tier without a price. */
+      const issues = (i) => {
+        const out = [];
+        if (!i.stations.length) out.push('Chưa có trạm in');
+        if (i.std == null) out.push('Thiếu giá STD');
+        if (i.ac == null) out.push('Thiếu giá AC');
+        return out;
+      };
+      const stationName = (id) => D.stations.find((s) => s.id === id).name;
+      const state = { query: '', group: '', attention: P.param('attention') != null };
+
+      const priceCell = (i, tier) => {
+        const v = i[tier.toLowerCase()];
+        const label = v == null ? '<span class="chip chip-warning">Chưa có giá</span>' : `<span class="money">${fmt(v)}</span>`;
+        return `<button type="button" class="cell-edit" data-price="${i.code}" data-tier="${tier}">${label}<span class="sr-only"> Sửa giá ${tier} của ${i.code}</span></button>`;
+      };
+      const row = (i) => {
+        const iss = issues(i);
+        return `<tr data-code="${i.code}"${iss.length ? ' class="row-attention"' : ''}>
+          <th scope="row" class="code">${i.code}</th>
+          <td>${P.esc(i.name)}</td>
+          <td>${P.esc(P.group(i.group).name)}</td>
+          <td>${P.esc(i.unit)}</td>
+          <td>${TYPES[i.kind]}</td>
+          <td class="num">${i.vat}%</td>
+          <td class="num">${priceCell(i, 'STD')}</td>
+          <td class="num">${priceCell(i, 'AC')}</td>
+          <td><span class="chip ${i.soldOut ? 'chip-warning' : 'chip-ok'}">${i.soldOut ? 'Hết hôm nay' : 'Đang bán'}</span></td>
+          <td>${i.stations.map(stationName).join(', ')}</td>
+          <td>${iss.map((x) => `<span class="chip chip-warning">${x}</span>`).join('')}</td>
+          <td><button type="button" class="secondary row-action" aria-label="Sửa món ${i.code}" data-go="office-item.html?code=${i.code}">Sửa</button></td>
+        </tr>`;
+      };
+      const attentionCount = D.items.filter((i) => issues(i).length).length;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <div class="toolbar">
+          <div class="field grow">
+            <label for="item-search">Tìm món</label>
+            <input id="item-search" type="search" aria-describedby="item-search-hint" />
+            <small id="item-search-hint">Mã, tên không dấu hoặc chữ cái đầu. Nhấn / để tìm.</small>
+          </div>
+          <div class="field">
+            <label for="item-group">Nhóm món</label>
+            <select id="item-group">
+              <option value="">Tất cả nhóm</option>
+              ${[...new Set(D.groups.map((g) => g.name))].sort().map((g) => `<option>${P.esc(g)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="chips" role="group" aria-label="Cần xử lý">
+            <button type="button" class="chip-button" id="f-all">Tất cả</button>
+            <button type="button" class="chip-button" id="f-att">Cần xử lý (${attentionCount})</button>
+          </div>
+          <div class="actions">
+            <button type="button" class="secondary" data-toast="Đã tải bảng giá (Excel): bang-gia-ocsam-main.xlsx">Xuất bảng giá (Excel)</button>
+            <button type="button" class="secondary" data-open="dlg-markup">Tăng giá phòng lạnh</button>
+            <button type="button" class="secondary" data-go="office-item.html">Thêm món</button>
+            <button type="button" data-go="office-import.html">Nhập từ Excel</button>
+          </div>
+        </div>
+        <p class="count" role="status" id="count"></p>
+        <p class="muted" id="no-match" hidden>Không có món nào khớp bộ lọc.</p>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Bảng danh mục món" id="table-box">
+          <table class="data">
+            <thead><tr>
+              <th scope="col">Mã</th><th scope="col">Tên món</th><th scope="col">Nhóm</th><th scope="col">ĐVT</th>
+              <th scope="col">Loại</th><th scope="col" class="num">VAT</th>
+              <th scope="col" class="num">Giá STD</th><th scope="col" class="num">Giá AC</th>
+              <th scope="col">Trạng thái</th><th scope="col">Trạm in</th><th scope="col">Cần xử lý</th><th scope="col">Thao tác</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <dialog class="proto-sheet" id="dlg-markup" aria-labelledby="markup-title">
+          <form class="panel" method="dialog">
+            <h2 id="markup-title">Đặt giá theo phần trăm</h2>
+            <p>Tính giá bảng đích từ giá bảng nguồn cộng thêm phần trăm, làm tròn lên nghìn đồng. Giá cũ vẫn lưu trong lịch sử.</p>
+            <div class="form-grid">
+              <div class="field"><label for="mk-from">Bảng giá nguồn</label>
+                <select id="mk-from">${D.tiers.map((t, i) => `<option${i === 0 ? ' selected' : ''}>${t.code} · ${t.name}</option>`).join('')}</select></div>
+              <div class="field"><label for="mk-to">Bảng giá đích</label>
+                <select id="mk-to">${D.tiers.map((t, i) => `<option${i === 1 ? ' selected' : ''}>${t.code} · ${t.name}</option>`).join('')}</select></div>
+              <div class="field"><label for="mk-pct">Cộng thêm (%)</label><input id="mk-pct" inputmode="numeric" value="10" /></div>
+              <div class="field"><label for="mk-group">Nhóm món</label>
+                <select id="mk-group"><option>Cả thực đơn</option>${D.groups.map((g) => `<option>${P.esc(g.name)}</option>`).join('')}</select></div>
+              <div class="field"><label for="mk-reason">Lý do</label><input id="mk-reason" value="Tăng giá theo phần trăm" /></div>
+            </div>
+            <div role="status" aria-live="polite" id="mk-done"></div>
+            <div class="actions">
+              <button type="button" id="mk-apply">Áp dụng</button>
+              <button type="button" class="secondary" data-close>Đóng</button>
+            </div>
+          </form>
+        </dialog>`,
+      );
+
+      const render = () => {
+        let list = D.items.filter((i) => matches(state.query, i));
+        if (state.group) list = list.filter((i) => P.group(i.group).name === state.group);
+        if (state.attention) list = list.filter((i) => issues(i).length);
+        document.getElementById('rows').innerHTML = list.map(row).join('');
+        document.getElementById('count').textContent = `${list.length} / ${D.items.length} món`;
+        document.getElementById('no-match').hidden = list.length > 0;
+        document.getElementById('table-box').hidden = list.length === 0;
+        document.getElementById('f-all').setAttribute('aria-pressed', String(!state.attention));
+        document.getElementById('f-att').setAttribute('aria-pressed', String(state.attention));
+      };
+      render();
+
+      const search = document.getElementById('item-search');
+      search.addEventListener('input', (e) => ((state.query = e.target.value), render()));
+      document.getElementById('item-group').addEventListener('change', (e) => ((state.group = e.target.value), render()));
+      document.getElementById('f-all').addEventListener('click', () => ((state.attention = false), render()));
+      document.getElementById('f-att').addEventListener('click', () => ((state.attention = true), render()));
+      // `/` jumps to the search box (guidelines §9)
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '/' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+          e.preventDefault();
+          search.focus();
+        }
+      });
+      document.getElementById('mk-apply').addEventListener('click', () => {
+        const g = document.getElementById('mk-group').value;
+        const n = g === 'Cả thực đơn' ? D.items.length : D.items.filter((i) => P.group(i.group).name === g).length;
+        document.getElementById('mk-done').innerHTML = `<p class="saved">Đã cập nhật giá ${n} món.</p>`;
+      });
+
+      // PriceCell: a click turns the price into an inline editor; Enter saves, Escape cancels.
+      document.getElementById('rows').addEventListener('click', (e) => {
+        const btn = e.target.closest('.cell-edit');
+        if (btn) {
+          const i = P.item(btn.dataset.price);
+          const tier = btn.dataset.tier;
+          const v = i[tier.toLowerCase()];
+          const td = btn.parentElement;
+          td.innerHTML = `<div class="cell-editor">
+            <input inputmode="numeric" aria-label="Sửa giá ${tier} của ${i.code}" value="${v == null ? '' : fmt(v)}" />
+            <button type="button" data-save>Lưu</button>
+            <button type="button" class="secondary" data-cancel>Hủy</button>
+          </div>`;
+          const input = td.querySelector('input');
+          input.focus();
+          const close = () => render();
+          const save = () => {
+            const n = Number(input.value.replace(/\D/g, ''));
+            if (!n || n % 1000 !== 0) {
+              if (!td.querySelector('.status'))
+                td.querySelector('.cell-editor').insertAdjacentHTML(
+                  'beforeend',
+                  '<div role="alert" class="status status-danger"><strong>Giá phải là số tiền đồng chẵn nghìn.</strong>Ví dụ 112.000. Bỏ phần lẻ rồi nhập lại.</div>',
+                );
+              return;
+            }
+            i[tier.toLowerCase()] = n;
+            render();
+            const cell = document.querySelector(`[data-price="${i.code}"][data-tier="${tier}"]`).parentElement;
+            cell.insertAdjacentHTML('beforeend', '<span role="status" class="saved">Đã lưu giá</span>');
+            setTimeout(() => cell.querySelector('.saved')?.remove(), 2500);
+          };
+          td.querySelector('[data-save]').addEventListener('click', save);
+          td.querySelector('[data-cancel]').addEventListener('click', close);
+          input.addEventListener('keydown', (k) => (k.key === 'Enter' ? save() : k.key === 'Escape' ? close() : null));
+          return;
+        }
+        // a click elsewhere on a row opens the item
+        const tr = e.target.closest('tr[data-code]');
+        if (tr && !e.target.closest('button,input,.cell-editor')) location.href = `office-item.html?code=${tr.dataset.code}`;
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Thiết bị đã đăng ký · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/devices: DevicesScreen.tsx (add form, the one-time pairing code, Row with new code / revoke).
+      // The code appears in a dialog here (inline status block in the app), with a link to the phone's pairing screen.
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Thiết bị đã đăng ký', nav: 'devices' });
+      const D = P.D;
+      const KINDS = { phone: 'Điện thoại', counter: 'Máy quầy' };
+      const devices = [
+        // a device added this evening and not paired yet (invented)
+        { name: 'Điện thoại bàn mới', kind: 'phone', state: 'pending', codeWaiting: true },
+        ...D.devices.map((d) => ({ name: d.name, kind: d.kind === 'Máy quầy' ? 'counter' : 'phone', state: d.state })),
+      ];
+      const STATES = { pending: 'Chờ ghép', active: 'Đang dùng', revoked: 'Đã thu hồi' };
+      const CLASS = { pending: 'job-waiting', active: 'job-printed', revoked: 'job-failed' };
+      let asking = null;
+      let codeSeq = 0;
+      const CODES = ['482913', '730564', '159286', '904417'];
+      const $ = (id) => document.getElementById(id);
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="devices-title">
+          <h2 id="devices-title">Thiết bị đã đăng ký</h2>
+          <p class="muted">Chỉ máy đã đăng ký mới gọi món được, và chỉ khi đang dùng Wi-Fi của nhà hàng. Thêm máy, nhận mã, rồi nhập mã trên máy đó.</p>
+          <form class="inline-add" id="add-form">
+            <div class="field"><label for="device-name">Tên thiết bị</label><input id="device-name" maxlength="60" placeholder="Ví dụ: Điện thoại bàn 1" /></div>
+            <div class="field"><label for="device-kind">Loại máy</label>
+              <select id="device-kind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+            <button type="submit" id="add" disabled>Thêm thiết bị</button>
+          </form>
+          <ul class="jobs" aria-label="Danh sách thiết bị" id="list"></ul>
+        </section>
+
+        <dialog class="proto-sheet" id="dlg-code" aria-labelledby="code-title">
+          <section class="status status-warning" style="margin:0">
+            <strong id="code-title"></strong>
+            <output class="pair-code" aria-label="Mã ghép" id="code"></output>
+            <span>Nhập mã này trên máy, khi máy đang dùng Wi-Fi của nhà hàng. Mã dùng một lần và hết hạn sau 15 phút. Mã chỉ hiện lần này.</span>
+            <button type="button" class="secondary" data-close>Đã ghi mã</button>
+          </section>
+          <div class="proto-actions"><a href="pair.html" class="link-button">Mở màn hình ghép máy trên điện thoại (pair.html)</a></div>
+        </dialog>`,
+      );
+
+      const render = () => {
+        $('list').innerHTML = devices
+          .map((d, i) => {
+            const revoked = d.state === 'revoked';
+            const n = P.esc(d.name);
+            return `<li class="job ${CLASS[d.state]}">
+              <div class="job-main"><strong>${n}</strong><span>${KINDS[d.kind]}</span>${d.codeWaiting ? '<span class="muted">Mã còn hiệu lực</span>' : ''}</div>
+              <div class="job-state"><span class="job-word">${STATES[d.state]}</span></div>
+              ${
+                revoked
+                  ? ''
+                  : `<div class="actions">${
+                      asking === i
+                        ? `<span>Thu hồi ${n}? Máy này sẽ không gọi món được nữa.</span>
+                           <button type="button" data-revoke="${i}">Thu hồi máy</button>
+                           <button type="button" class="secondary" data-keep>Giữ lại</button>`
+                        : `<button type="button" class="secondary" aria-label="Tạo mã mới cho ${n}" data-code="${i}">Tạo mã mới</button>
+                           <button type="button" class="secondary" aria-label="Thu hồi ${n}" data-ask="${i}">Thu hồi</button>`
+                    }</div>`
+              }
+            </li>`;
+          })
+          .join('');
+      };
+      const showCode = (d) => {
+        d.codeWaiting = true;
+        if (d.state !== 'active') d.state = 'pending';
+        $('code-title').textContent = `Mã ghép của ${d.name}`;
+        $('code').textContent = CODES[codeSeq++ % CODES.length];
+        render();
+        $('dlg-code').showModal();
+      };
+
+      render();
+      $('device-name').addEventListener('input', (e) => ($('add').disabled = e.target.value.trim() === ''));
+      $('add-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = $('device-name').value.trim();
+        if (!name) return;
+        const d = { name, kind: $('device-kind').value, state: 'pending' };
+        devices.unshift(d);
+        $('device-name').value = '';
+        $('add').disabled = true;
+        showCode(d);
+      });
+      $('list').addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.code) return showCode(devices[Number(b.dataset.code)]);
+        if (b.dataset.ask) asking = Number(b.dataset.ask);
+        if (b.hasAttribute('data-keep')) asking = null;
+        if (b.dataset.revoke) {
+          const d = devices[Number(b.dataset.revoke)];
+          d.state = 'revoked';
+          d.codeWaiting = false;
+          asking = null;
+        }
+        render();
+      });
+      if (P.param('code') != null) showCode(devices[0]);
+    </script>
+  </body>
+</html>

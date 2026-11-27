@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Sơ đồ bàn · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/floor-plan: FloorPlanScreen.tsx. A 24 x 14 grid of 52 px cells (FLOOR_PLAN_COLUMNS/ROWS);
+      // select a table, then click a free cell or use the arrow keys. ?area=san|nha|lanh.
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Sơ đồ bàn', nav: 'floorPlan' });
+      const D = P.D;
+      const COLS = 24, ROWS = 14, CELL = 52;
+      /** Positions (column, row) invented for the prototype; L3 is not placed yet. */
+      const POS = {
+        S1: [1, 1], S2: [4, 1], S3: [7, 1], S4: [1, 4], S5: [4, 4], S6: [7, 4],
+        T1: [2, 2], T2: [5, 2], T3: [8, 2], T4: [2, 6], T5: [5, 6], T6: [9, 6],
+        L1: [3, 3], L2: [7, 3],
+      };
+      const tables = D.tables.map((t) => ({ ...t, x: POS[t.id]?.[0] ?? null, y: POS[t.id]?.[1] ?? null }));
+      let areaId = P.param('area', D.areas[0].id);
+      let selected = null;
+      let note = null;
+      const $ = (id) => document.getElementById(id);
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section class="panel" aria-labelledby="plan-title">
+          <h2 id="plan-title">Sơ đồ bàn</h2>
+          <p class="muted">Chọn một bàn, rồi chạm vào ô trên sơ đồ để đặt. Dùng phím mũi tên để dịch bàn đã chọn từng ô.</p>
+          <div class="field"><label for="plan-area">Khu</label>
+            <select id="plan-area">${D.areas.map((a) => `<option value="${a.id}"${a.id === areaId ? ' selected' : ''}>${P.esc(a.name)}</option>`).join('')}</select></div>
+          <div id="plan-body"></div>
+        </section>`,
+      );
+
+      const render = () => {
+        const area = P.area(areaId);
+        const inArea = tables.filter((t) => t.area === areaId);
+        const placed = inArea.filter((t) => t.x !== null);
+        const unplaced = inArea.filter((t) => t.x === null);
+        const sel = inArea.find((t) => t.id === selected);
+        $('plan-body').innerHTML = `
+          <p role="status" class="muted">${sel ? `Đang chọn bàn ${sel.id}` : 'Chưa chọn bàn nào.'}</p>
+          <div class="plan-scroll" tabindex="0" role="region" aria-label="Sơ đồ khu ${P.esc(area.name)}">
+            <div class="plan-canvas" id="canvas" style="width:${COLS * CELL}px;height:${ROWS * CELL}px;background-size:${CELL}px ${CELL}px">
+              ${placed
+                .map(
+                  (t) =>
+                    `<button type="button" class="plan-table" data-t="${t.id}" aria-pressed="${t.id === selected}" aria-label="Chọn bàn ${t.id}"
+                      style="left:${t.x * CELL + 2}px;top:${t.y * CELL + 2}px;width:${CELL - 4}px;height:${CELL - 4}px">${t.id}</button>`,
+                )
+                .join('')}
+            </div>
+          </div>
+          ${sel && sel.x !== null ? `<p role="status" class="muted">Bàn ${sel.id} ở cột ${sel.x + 1}, hàng ${sel.y + 1}</p>
+            <div class="actions"><button type="button" class="secondary" id="remove">Bỏ khỏi sơ đồ</button></div>` : ''}
+          <fieldset class="checks group">
+            <legend>Bàn chưa đặt lên sơ đồ</legend>
+            ${unplaced.length === 0 ? '<p class="muted">Mọi bàn của khu đã có chỗ trên sơ đồ.</p>' : ''}
+            <div class="chips">${unplaced.map((t) => `<button type="button" class="chip-button" data-place="${t.id}" aria-label="Chọn bàn ${t.id}">${t.id}</button>`).join('')}</div>
+          </fieldset>
+          ${note ? `<div role="alert" class="status status-danger"><strong>${note}</strong></div>` : ''}`;
+        if (selected) document.querySelector(`.plan-table[data-t="${selected}"]`)?.focus({ preventScroll: true });
+      };
+      const taken = (x, y, except) => tables.some((t) => t.area === areaId && t.x === x && t.y === y && t.id !== except);
+      const place = (t, x, y) => {
+        if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
+        if (taken(x, y, t.id)) return (note = 'Ô này đã có bàn khác.'), render();
+        note = null;
+        t.x = x;
+        t.y = y;
+        render();
+      };
+
+      render();
+      $('plan-area').addEventListener('change', (e) => ((areaId = e.target.value), (selected = null), (note = null), render()));
+      $('plan-body').addEventListener('click', (e) => {
+        const tb = e.target.closest('.plan-table');
+        if (tb) return (selected = tb.dataset.t), render();
+        if (e.target.id === 'canvas' && selected) {
+          const box = e.target.getBoundingClientRect();
+          return place(tables.find((t) => t.id === selected), Math.floor((e.clientX - box.left) / CELL), Math.floor((e.clientY - box.top) / CELL));
+        }
+        if (e.target.id === 'remove') {
+          const t = tables.find((x) => x.id === selected);
+          t.x = t.y = null;
+          return render();
+        }
+        const p = e.target.closest('[data-place]');
+        if (p) {
+          const t = tables.find((x) => x.id === p.dataset.place);
+          selected = t.id;
+          for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (!taken(x, y)) return place(t, x, y);
+        }
+      });
+      $('plan-body').addEventListener('keydown', (e) => {
+        const tb = e.target.closest('.plan-table');
+        const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+        if (!tb || !d) return;
+        e.preventDefault();
+        const t = tables.find((x) => x.id === tb.dataset.t);
+        selected = t.id;
+        place(t, t.x + d[0], t.y + d[1]);
+      });
+    </script>
+  </body>
+</html>

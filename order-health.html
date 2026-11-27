@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Tình trạng máy chủ và máy in · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order/health: the premise status screen (HealthScreen.tsx, S22/S27): printers by their real fault, sync,
+      // disk, the premise copy and the CukCuk queue. Texts as packages/domain/src/health.ts writes them.
+      const as = P.param('as', 'manager');
+      const D = P.D;
+      const H = D.health;
+      const main = P.frame({ surface: 'order', user: as, title: 'Tình trạng máy chủ và máy in' });
+      const WORD = { ok: 'Bình thường', warning: 'Cần chú ý', fault: 'Có lỗi' };
+      const ICON = { ok: '✔', warning: '▲', fault: '✖' };
+      const badge = (s) =>
+        `<span class="chip chip-${s === 'ok' ? 'ok' : s === 'warning' ? 'warning' : 'danger'}"><span aria-hidden="true">${ICON[s]} </span>${WORD[s]}</span>`;
+      /** printerText() of packages/domain/src/health.ts; Nướng is out of paper with one ticket waiting. */
+      const printerText = (p) =>
+        p.state === 'ok'
+          ? { cause: `Máy in ${p.name} hoạt động bình thường.`, remedy: '' }
+          : { cause: `Máy in ${p.name} hết giấy.`, remedy: 'Thay cuộn giấy mới; phiếu đang chờ sẽ tự in lại.' };
+      const waiting = (p) => D.tickets.filter((t) => t.station === p.name && t.state === 'queued').length;
+      const jobsText = (f, w) => (f === 0 && w === 0 ? 'Không có phiếu tồn' : `${f} phiếu lỗi, ${w} phiếu chờ`);
+      const cukWaiting = D.cukcukQueue.filter((r) => r.state === 'waiting').length;
+      const cukLate = D.cukcukQueue.filter((r) => r.state === 'waiting' && r.late).length;
+      const overall = H.printers.some((p) => p.state === 'fault') ? 'fault' : 'ok';
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p><a class="back-link" href="order-floor.html?as=${as}">Quay lại sơ đồ bàn</a></p>
+        <section aria-labelledby="health-title">
+          <h2 id="health-title">Tình trạng máy chủ và máy in</h2>
+          <p role="status">${badge(overall)} Cập nhật lúc ${H.sync.lastPush}</p>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Máy in">
+            <table class="data">
+              <caption>Máy in</caption>
+              <thead><tr><th scope="col">Máy in</th><th scope="col">Tình trạng</th><th scope="col">Cần làm</th><th scope="col">Phiếu</th></tr></thead>
+              <tbody>${H.printers
+                .map((p) => {
+                  const t = printerText(p);
+                  return `<tr><th scope="row">${p.name}</th><td>${badge(p.state === 'ok' ? 'ok' : 'fault')}<br />${t.cause}</td>
+                    <td>${t.remedy || '—'}</td><td>${jobsText(0, waiting(p))}</td></tr>`;
+                })
+                .join('')}</tbody>
+            </table>
+          </div>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Máy chủ">
+            <table class="data">
+              <caption>Máy chủ</caption>
+              <tbody>
+                <tr><th scope="row">Gửi dữ liệu lên trung tâm</th>
+                  <td>${badge(H.sync.state)}<br />Đã gửi hết dữ liệu lên trung tâm.<br />Liên lạc gần nhất lúc ${H.sync.lastPush}</td></tr>
+                <tr><th scope="row">Ổ đĩa</th><td>${badge(H.disk.state)}<br />Ổ đĩa còn trống ${H.disk.freePercent}%</td></tr>
+                <tr><th scope="row">Bản sao dự phòng</th><td>${badge(H.copy.state)}<br />Bản sao dự phòng gần nhất: ${H.copy.last}:00.</td></tr>
+                <tr><th scope="row">Hàng đợi nhập CukCuk</th>
+                  <td>${badge(cukLate > 0 ? 'warning' : 'ok')}<br />${
+                    cukLate > 0 ? `${cukWaiting} hóa đơn chờ nhập, ${cukLate} hóa đơn trễ` : `${cukWaiting} hóa đơn chờ nhập`
+                  }</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>`,
+      );
+    </script>
+  </body>
+</html>

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Duyệt hủy món · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order/approvals: the approver's list of waiting requests, my PIN and push (ApprovalsScreen.tsx, FR-06.07).
+      // For the manager (?as=manager) and the owner (?as=owner).
+      const as = P.param('as', 'manager');
+      const D = P.D;
+      const main = P.frame({ surface: 'order', user: as, title: 'Duyệt hủy món' });
+      const me = D.users[as].name;
+      /** The value of each request: the amount of the line asked to cancel. */
+      const VALUE = { A1: 79000, A2: 98000 };
+      /** Minutes since the item was ordered (now 21:40): A1 Sò lông sent at 19:43 (S3), A2 Sò điệp at 20:24 (L1). */
+      const MINUTES = { A1: 117, A2: 76 };
+      let pending = D.approvals.filter((a) => a.state === 'waiting');
+
+      const what = (a) => (a.kind === 'Hủy món đã in' ? a.detail.replace(/^(.*) × (\S+) \(.*\)$/, '$2 × $1') : `${a.kind}: ${a.detail}`);
+      const card = (a) => {
+        const label = what(a);
+        const own = a.by === me;
+        return `<li class="approval-request" data-id="${a.id}">
+          <div class="approval-head">
+            <strong>Bàn ${a.table}</strong>
+            <span class="chip chip-warning">Chờ duyệt hủy</span>
+          </div>
+          <p>${P.esc(label)}</p>
+          <p class="muted">Trị giá ${P.money(VALUE[a.id])} · Người xin: ${P.esc(a.by)}${
+            MINUTES[a.id] !== null ? ` · ${MINUTES[a.id] === 0 ? 'Vừa gọi món' : `Đã gọi món ${MINUTES[a.id]} phút`}` : ''
+          }</p>
+          <p class="muted">Lý do: ${P.esc(a.reason)}</p>
+          ${
+            own
+              ? `<p class="muted">Yêu cầu của chính bạn: nhờ người khác duyệt.</p>
+                <div class="actions"><button type="button" class="secondary" data-decide="withdraw">Rút yêu cầu</button></div>`
+              : `<div class="actions">
+                  <button type="button" data-decide="approve" aria-label="Duyệt hủy ${P.esc(label)} bàn ${a.table}">Duyệt</button>
+                  <button type="button" class="secondary" data-decide="reject" aria-label="Từ chối hủy ${P.esc(label)} bàn ${a.table}">Từ chối</button>
+                </div>`
+          }
+        </li>`;
+      };
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p><a class="back-link" href="order-floor.html?as=${as}">Về sơ đồ bàn</a></p>
+        <p role="status" class="status status-danger market-banner">Đã quá giờ mở cửa: 1 món giá theo chợ chưa có giá hôm nay. Báo kế toán.</p>
+        <section role="alert" aria-label="Phiếu bếp không in được" class="status status-danger print-alert">
+          <strong>Trạm Nướng không in được phiếu</strong>
+          <span>Bàn S3: Ốc giác nướng mỡ hành × 1 (máy in hết giấy).</span>
+          <div class="actions">
+            <button type="button" data-toast="Đã gửi lệnh in lại phiếu.">In lại</button>
+            <button type="button" class="secondary" data-toast="Đã xử lý">Đã xử lý</button>
+            <button type="button" class="secondary" data-go="order-history.html?as=${as}">Lịch sử gửi bếp</button>
+          </div>
+        </section>
+        <div class="approvals">
+          <section aria-labelledby="approvals-list-title">
+            <h2 id="approvals-list-title">Yêu cầu đang chờ</h2>
+            <div id="list"></div>
+          </section>
+          <section aria-labelledby="pin-title">
+            <h2 id="pin-title">Mã duyệt của tôi</h2>
+            <p class="muted">Mã gồm 6 số, chỉ dùng để duyệt hủy món trên máy của nhân viên. Nhập sai 3 lần thì khóa 15 phút.</p>
+            <p role="status" class="status status-ok">Đã đặt mã duyệt.</p>
+            <form id="pin-form">
+              <div class="field">
+                <label for="pin-password">Mật khẩu tài khoản (để xác nhận)</label>
+                <input id="pin-password" type="password" autocomplete="current-password" />
+              </div>
+              <div class="field">
+                <label for="pin-new">Mã duyệt mới (6 số)</label>
+                <input id="pin-new" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
+              </div>
+              <div id="pin-problem"></div>
+              <div class="actions"><button type="submit" id="pin-save" disabled>Lưu mã duyệt</button></div>
+            </form>
+          </section>
+          <section aria-labelledby="push-title">
+            <h2 id="push-title">Thông báo khi khóa màn hình</h2>
+            <p class="muted">Bật để điện thoại báo ngay khi có yêu cầu duyệt, kể cả khi đã khóa màn hình. Trên iPhone cần thêm ứng dụng vào Màn hình chính trước.</p>
+            <div class="actions">
+              <button type="button" class="secondary" data-toast="Đã bật thông báo trên máy này.">Bật thông báo trên máy này</button>
+            </div>
+          </section>
+        </div>`,
+      );
+
+      function render() {
+        document.getElementById('list').innerHTML =
+          pending.length === 0
+            ? `<p class="muted">Không có yêu cầu nào đang chờ.</p>`
+            : `<ul class="approval-list">${pending.map(card).join('')}</ul>`;
+      }
+      render();
+
+      document.getElementById('list').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-decide]');
+        if (!b) return;
+        const a = pending.find((x) => x.id === b.closest('[data-id]').dataset.id);
+        const label = what(a);
+        P.toast(
+          b.dataset.decide === 'approve'
+            ? `Yêu cầu hủy ${label} đã được duyệt.`
+            : b.dataset.decide === 'reject'
+              ? `Yêu cầu hủy ${label} bị từ chối.`
+              : 'Đã rút yêu cầu.',
+        );
+        pending = pending.filter((x) => x !== a);
+        render();
+      });
+
+      const pw = document.getElementById('pin-password');
+      const pin = document.getElementById('pin-new');
+      pw.addEventListener('input', () => (document.getElementById('pin-save').disabled = pw.value === ''));
+      pin.addEventListener('input', () => (pin.value = pin.value.replace(/\D/g, '')));
+      document.getElementById('pin-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const box = document.getElementById('pin-problem');
+        if (!/^\d{6}$/.test(pin.value)) {
+          box.innerHTML = `<p role="alert" class="status status-danger">Mã duyệt gồm đúng 6 chữ số.</p>`;
+          return;
+        }
+        box.innerHTML = '';
+        pw.value = '';
+        pin.value = '';
+        document.getElementById('pin-save').disabled = true;
+        P.toast('Đã lưu mã duyệt.');
+      });
+    </script>
+  </body>
+</html>

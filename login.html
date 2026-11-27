@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Đăng nhập · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // The login form (shared/LoginForm.tsx). After login each role lands on its own surface (App.tsx HOME).
+      const D = P.D;
+      const HOME = {
+        waiter: 'order-floor.html',
+        manager: 'order-floor.html?as=manager',
+        cashier: 'cashier.html',
+        cukcuk_entry: 'cashier-cukcuk.html',
+        owner: 'office-live.html',
+        accountant: 'office-catalogue.html',
+      };
+      const digits = (s) => s.replace(/\D/g, '');
+
+      document.body.insertAdjacentHTML(
+        'afterbegin',
+        `<main>
+          <h1>iOcOrder</h1>
+          <form id="login">
+            <label for="phone">Số điện thoại</label>
+            <input id="phone" inputmode="tel" autocomplete="username" />
+            <label for="password">Mật khẩu</label>
+            <input id="password" type="password" autocomplete="current-password" />
+            <div id="problem"></div>
+            <button type="submit">Đăng nhập</button>
+          </form>
+          <section aria-labelledby="quick" style="margin-top: 32px">
+            <h2 id="quick">Prototype: vào nhanh theo vai trò</h2>
+            <p class="muted">Bấm một người để điền sẵn số điện thoại, rồi bấm “Đăng nhập”. Mật khẩu nhập gì cũng được.</p>
+            <ul class="proto-grid">
+              ${Object.values(D.users)
+                .map(
+                  (u) =>
+                    `<li><a href="#" data-phone="${u.phone}"><strong>${P.esc(u.roleLabel)}</strong><span>${P.esc(u.name)} · ${u.phone}</span></a></li>`,
+                )
+                .join('')}
+            </ul>
+          </section>
+        </main>`,
+      );
+      document.querySelectorAll('[data-phone]').forEach((a) =>
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          document.getElementById('phone').value = a.dataset.phone;
+          document.getElementById('password').value = '••••••••';
+          document.getElementById('password').focus();
+        }),
+      );
+      document.getElementById('login').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const phone = digits(document.getElementById('phone').value);
+        const user = D.staff.find((s) => digits(s.phone) === phone && s.state === 'Đang làm');
+        if (!user || !document.getElementById('password').value) {
+          document.getElementById('problem').innerHTML =
+            '<div role="alert" class="status status-danger"><strong>Sai số điện thoại hoặc mật khẩu.</strong>Kiểm tra lại, hoặc nhờ quản lý đặt lại mật khẩu.</div>';
+          return;
+        }
+        location.href = HOME[user.role];
+      });
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        `<aside class="proto-bar" aria-label="Prototype"><span>Prototype tĩnh · dữ liệu mẫu, không lưu thay đổi</span><a href="index.html">Bản đồ màn hình</a></aside>`,
+      );
+    </script>
+  </body>
+</html>

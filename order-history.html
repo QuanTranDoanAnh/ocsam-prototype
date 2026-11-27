@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Lịch sử gửi bếp · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order/history: today's kitchen tickets with Reprint and Remind kitchen (HistoryScreen.tsx, FR-03.10).
+      // A waiter sees the tickets of their own tables; a manager or the owner sees all and can test print.
+      const as = P.param('as', 'waiter');
+      const D = P.D;
+      const main = P.frame({ surface: 'order', user: as, title: 'Lịch sử gửi bếp' });
+      const STATES = { queued: 'Đang chờ in', printing: 'Đang in', printed: 'Đã in', failed: 'Không in được', cancelled: 'Đã rút lại' };
+      const KINDS = { 'Gọi món': '', 'Hủy món': 'Phiếu hủy', 'Chuyển bàn': 'Chuyển bàn' };
+      const stateClass = (s) => (s === 'failed' ? 'job-failed' : s === 'printed' ? 'job-printed' : 'job-waiting');
+      const sessionOf = (t) => P.session(t.split(' ')[0]);
+      const mine = (t) => as !== 'waiter' || sessionOf(t.table)?.waiter === D.users.waiter.name;
+      const tickets = D.tickets.filter(mine);
+      const manages = as === 'manager' || as === 'owner';
+
+      const row = (j) => {
+        const kind = KINDS[j.kind] ?? j.kind;
+        const order = sessionOf(j.table)?.order ?? '';
+        return `<li class="job ${stateClass(j.state)}">
+          <div class="job-main">
+            <strong>${P.esc(j.items)}${kind ? ` · ${kind}` : ''}</strong>
+            <span>Bàn ${P.esc(j.table)} · phiếu ${order} · ${j.station}</span>
+            <span class="muted">${j.at}</span>
+          </div>
+          <div class="job-state">
+            <span class="job-word">${STATES[j.state]}</span>
+            ${j.cause ? `<span>${P.esc(j.cause)}</span>` : ''}
+          </div>
+          <div class="actions">
+            <button type="button" class="secondary" aria-label="In lại ${P.esc(j.items)}" data-toast="Đã gửi lệnh in lại phiếu.">In lại</button>
+            <button type="button" class="secondary" aria-label="Nhắc bếp ${P.esc(j.items)}" data-toast="Đã gửi nhắc bếp.">Nhắc bếp</button>
+          </div>
+        </li>`;
+      };
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p><a class="back-link" href="order-floor.html?as=${as}">Về sơ đồ bàn</a></p>
+        ${
+          manages
+            ? `<p role="status" class="status status-danger market-banner">Đã quá giờ mở cửa: 1 món giá theo chợ chưa có giá hôm nay. Báo kế toán.</p>
+              <section role="alert" aria-label="Phiếu bếp không in được" class="status status-danger print-alert">
+                <strong>Trạm Nướng không in được phiếu</strong>
+                <span>Bàn S3: Ốc giác nướng mỡ hành × 1 (máy in hết giấy).</span>
+                <div class="actions">
+                  <button type="button" data-toast="Đã gửi lệnh in lại phiếu.">In lại</button>
+                  <button type="button" class="secondary" data-toast="Đã xử lý">Đã xử lý</button>
+                </div>
+              </section>`
+            : ''
+        }
+        <section aria-labelledby="history-title">
+          <h2 id="history-title">Lịch sử gửi bếp</h2>
+          <form role="search" class="inline-add" onsubmit="return false">
+            <div class="field">
+              <label for="history-q">Tìm theo số phiếu, bàn hoặc món</label>
+              <input id="history-q" type="search" />
+            </div>
+          </form>
+          <div id="jobs"></div>
+          ${
+            manages
+              ? `<section class="panel" aria-labelledby="test-print-title">
+                  <h2 id="test-print-title">In thử phiếu</h2>
+                  <div class="inline-add">
+                    <div class="field">
+                      <label for="test-station">Trạm in</label>
+                      <select id="test-station">${D.stations.map((s) => `<option>${s.name}</option>`).join('')}</select>
+                    </div>
+                    <button type="button" data-toast="Đã gửi lệnh in thử. Xem phiếu ra ở máy in.">In thử</button>
+                  </div>
+                </section>`
+              : ''
+          }
+        </section>`,
+      );
+
+      const unaccent = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
+      const q = document.getElementById('history-q');
+      function render() {
+        const needle = unaccent(q.value.trim());
+        const shown = tickets.filter(
+          (j) => !needle || unaccent(`${j.table} ${j.items} ${sessionOf(j.table)?.order ?? ''}`).includes(needle),
+        );
+        document.getElementById('jobs').innerHTML =
+          shown.length === 0
+            ? `<p class="muted">${needle ? 'Không có phiếu nào khớp.' : 'Hôm nay chưa có phiếu bếp nào.'}</p>`
+            : `<ul class="jobs" aria-label="Danh sách phiếu bếp">${shown.map(row).join('')}</ul>`;
+      }
+      q.addEventListener('input', render);
+      render();
+    </script>
+  </body>
+</html>

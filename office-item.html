@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Món · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/catalogue, item panel: ItemForm.tsx + NotesPanel.tsx (item notes) + PriceHistoryPanel.tsx.
+      // ?code=OH01 edits an item; without code it is "Thêm món mới". In the app the form replaces the
+      // catalogue table on the same screen; here it is its own page.
+      const D = P.D;
+      const item = P.item(P.param('code', '')) || null;
+      const main = P.frame({
+        surface: 'office',
+        user: 'accountant',
+        title: 'Danh mục món',
+        nav: 'catalogue',
+        crumbs: [
+          { label: 'Văn phòng', href: 'office-catalogue.html' },
+          { label: 'Danh mục món', href: 'office-catalogue.html' },
+          { label: item ? item.name : 'Thêm món mới' },
+        ],
+      });
+
+      const TYPES = [['Food', 'Đồ ăn'], ['Drink', 'Đồ uống'], ['Combo', 'Combo'], ['Other', 'Khác']];
+      const STATES = [['selling', 'Đang bán'], ['sold_out_today', 'Hết hôm nay'], ['discontinued', 'Ngừng bán']];
+      const type = item ? (item.kind === 'drink' ? 'Drink' : 'Food') : 'Food';
+      const sel = item ? (item.soldOut ? 'sold_out_today' : 'selling') : 'selling';
+      const opt = (list, v) => list.map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${l}</option>`).join('');
+      const check = (id, label, on, hint) =>
+        `<div class="field"><label class="check" for="${id}"><input id="${id}" type="checkbox"${on ? ' checked' : ''} />${label}</label>${hint ? `<small>${hint}</small>` : ''}</div>`;
+
+      /** Item notes (FR-01.17); the group's notes are on "Nhóm món và ghi chú". Invented for the prototype. */
+      const ITEM_NOTES = { OH01: ['Ít muối', 'Cay nhiều'], GH01: ['Hấp kỹ'], LA01: ['Ít cay', 'Thêm rau'] };
+      const notes = item ? (ITEM_NOTES[item.code] ?? []) : [];
+
+      /** Price versions (append-only, FR-07.03): the import on 01/11, the AC markup on 10/11, and today's edits. */
+      const history = () => {
+        const rows = [];
+        const tp = D.todayPrices.find((p) => p.code === item.code);
+        if (item.code === 'OH01')
+          rows.push(['27/11/2026 15:40', 'Giá thường', 129000, 135000, 'Lê Minh Anh', 'Sửa giá trong danh mục']);
+        if (tp && tp.confirmed)
+          rows.push([`27/11/2026 ${tp.at}`, 'Giá thường', tp.yesterday, tp.today, tp.by, 'Giá hôm nay']);
+        if (item.ac != null)
+          rows.push(['10/11/2026 09:12', 'Phòng lạnh', Math.round(item.ac / 1.1 / 1000) * 1000, item.ac, 'Lê Minh Anh', 'Tăng giá theo phần trăm']);
+        rows.push(['01/11/2026 08:30', 'Giá thường', null, item.code === 'OH01' ? 129000 : tp ? tp.yesterday : item.std, 'Lê Minh Anh', 'Nhập từ Excel']);
+        return rows;
+      };
+      const money = (v) => (v === null ? 'không bán' : P.money(v));
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <form class="panel" aria-labelledby="item-form-title" id="item-form">
+          <h2 id="item-form-title">${item ? `Sửa món ${P.esc(item.name)}` : 'Thêm món mới'}</h2>
+          <div class="form-grid">
+            <div class="field"><label for="f-name">Tên món</label><input id="f-name" required value="${P.esc(item?.name ?? '')}" /></div>
+            <div class="field"><label for="f-code">Mã món</label>
+              <input id="f-code" value="${item?.code ?? ''}"${item ? ' disabled' : ''} aria-describedby="f-code-hint" />
+              <small id="f-code-hint">${item ? 'Mã món không đổi được sau khi tạo.' : 'Để trống để hệ thống gợi ý từ chữ cái đầu của tên.'}</small></div>
+            <div class="field"><label for="f-group">Nhóm món</label>
+              <select id="f-group"><option value="">(chưa có nhóm)</option>${D.groups
+                .map((g) => `<option value="${g.id}"${item?.group === g.id ? ' selected' : ''}>${P.esc(g.name)}</option>`)
+                .join('')}</select></div>
+            <div class="field"><label for="f-unit">Đơn vị tính</label><input id="f-unit" required value="${P.esc(item?.unit ?? '')}" /></div>
+            <div class="field"><label for="f-type">Loại món</label><select id="f-type">${opt(TYPES, type)}</select></div>
+            <div class="field"><label for="f-vat">VAT</label><select id="f-vat">${opt(
+              [0, 5, 8, 10].map((v) => [String(v), `${v}%`]),
+              String(item?.vat ?? 8),
+            )}</select></div>
+            <div class="field"><label for="f-state">Trạng thái bán</label><select id="f-state">${opt(STATES, sel)}</select></div>
+          </div>
+          <div class="form-grid">
+            ${check('f-market', 'Giá theo thị trường', item?.market, 'Giá chốt lúc bán, không lấy từ bảng giá.')}
+            ${check('f-free', 'Món tặng', false)}
+            ${check('f-weight', 'Bán theo cân (số lượng có hai số lẻ)', item?.unit === 'kg')}
+          </div>
+          <div class="inline-add">
+            <div class="field"><label for="f-newgroup">Nhóm mới</label><input id="f-newgroup" /></div>
+            <button type="button" class="secondary" data-toast="Đã thêm nhóm">Thêm nhóm</button>
+          </div>
+          <fieldset class="checks group">
+            <legend>Trạm in của món</legend>
+            <p class="muted">Phiếu bếp in ở mọi trạm được chọn. Chưa chọn trạm thì món chưa bán được.</p>
+            ${D.stations
+              .map(
+                (s) =>
+                  `<label class="check"><input type="checkbox"${item?.stations.includes(s.id) ? ' checked' : ''} />${s.name}</label>`,
+              )
+              .join('')}
+          </fieldset>
+          <div class="actions">
+            <button type="button" data-toast="Đã lưu món" data-go="office-catalogue.html">Lưu món</button>
+            <button type="button" class="secondary" data-go="office-catalogue.html">Hủy</button>
+          </div>
+        </form>
+        ${
+          item
+            ? `<section class="panel" aria-labelledby="notes-items">
+                <h2 id="notes-items">Ghi chú phục vụ của món</h2>
+                <p class="muted">Phục vụ chọn một chạm khi gọi món; vẫn gõ thêm được.</p>
+                <ul class="note-list" aria-label="Danh sách ghi chú" id="notes"></ul>
+                <p class="muted" id="notes-none">Chưa có ghi chú nào.</p>
+                <form class="inline-add" aria-label="Thêm ghi chú" id="note-form">
+                  <div class="field"><label for="f-note">Ghi chú mới</label><input id="f-note" maxlength="100" /></div>
+                  <button type="submit" id="note-add" disabled>Thêm ghi chú</button>
+                </form>
+              </section>
+              <section class="panel" aria-labelledby="history-title">
+                <h2 id="history-title">Lịch sử giá</h2>
+                <div class="table-scroll" tabindex="0" role="region" aria-label="Bảng lịch sử giá của ${P.esc(item.name)}">
+                  <table>
+                    <caption>Lịch sử giá của ${P.esc(item.name)}</caption>
+                    <thead><tr>
+                      <th scope="col">Có hiệu lực từ</th><th scope="col">Bảng giá</th>
+                      <th scope="col" class="num">Giá cũ</th><th scope="col" class="num">Giá mới</th>
+                      <th scope="col">Người sửa</th><th scope="col">Lý do</th>
+                    </tr></thead>
+                    <tbody>${history()
+                      .map(
+                        (h) =>
+                          `<tr><td>${h[0]}</td><td>${h[1]}</td><td class="num">${money(h[2])}</td><td class="num">${money(h[3])}</td><td>${P.esc(h[4])}</td><td>${P.esc(h[5])}</td></tr>`,
+                      )
+                      .join('')}</tbody>
+                  </table>
+                </div>
+              </section>`
+            : ''
+        }`,
+      );
+
+      if (item) {
+        const renderNotes = () => {
+          document.getElementById('notes').innerHTML = notes
+            .map(
+              (n, i) =>
+                `<li><span>${P.esc(n)}</span><button type="button" class="secondary row-action" aria-label="Xóa ghi chú ${P.esc(n)}" data-del="${i}">Xóa</button></li>`,
+            )
+            .join('');
+          document.getElementById('notes').hidden = notes.length === 0;
+          document.getElementById('notes-none').hidden = notes.length > 0;
+        };
+        renderNotes();
+        const input = document.getElementById('f-note');
+        input.addEventListener('input', () => (document.getElementById('note-add').disabled = input.value.trim() === ''));
+        document.getElementById('note-form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          notes.push(input.value.trim());
+          input.value = '';
+          document.getElementById('note-add').disabled = true;
+          renderNotes();
+        });
+        document.getElementById('notes').addEventListener('click', (e) => {
+          const b = e.target.closest('[data-del]');
+          if (b) notes.splice(Number(b.dataset.del), 1), renderNotes();
+        });
+      }
+    </script>
+  </body>
+</html>

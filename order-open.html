@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Mở bàn · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order/table/:id of an empty table: open it with one tap on the guest count (OrderScreen.tsx OpenSheet, BR-13).
+      const as = P.param('as', 'waiter');
+      const main = P.frame({ surface: 'order', user: as, title: 'Gọi món' });
+      const table = P.table(P.param('table', 'S2')) ?? P.table('S2');
+      const back = `order-floor.html?area=${table.area}&as=${as}`;
+      const go = (n) => `order-table.html?table=${table.id}&guests=${n}&as=${as}`;
+      const toast = (n) => `Đã mở bàn ${table.id} · ${n} khách`;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p><a class="back-link" href="${back}">Về sơ đồ bàn</a></p>
+        ${
+          table.state !== 'empty'
+            ? `<div role="alert" class="status status-danger"><strong>Bàn này đã được mở bởi người khác.</strong>Đang chuyển sang đơn của bàn.
+                <button type="button" class="secondary" data-go="order-table.html?table=${table.id}&as=${as}">Gọi món</button></div>`
+            : `<section aria-labelledby="open-title" class="panel">
+                <h2 id="open-title">Mở bàn ${table.id}</h2>
+                <p class="muted">Chạm số khách để mở bàn.</p>
+                <div role="group" aria-label="Số khách" class="guest-grid">
+                  ${[1, 2, 3, 4, 5, 6, 8, 10]
+                    .map((n) => `<button type="button" data-toast="${toast(n)}" data-go="${go(n)}">${n}</button>`)
+                    .join('')}
+                </div>
+                <div class="field">
+                  <label for="guest-other">Số khách khác</label>
+                  <input id="guest-other" type="number" inputmode="numeric" min="1" max="500" />
+                  <button type="button" class="secondary" id="open-other" disabled>Mở bàn</button>
+                </div>
+              </section>`
+        }`,
+      );
+
+      const other = document.getElementById('guest-other');
+      if (other) {
+        const btn = document.getElementById('open-other');
+        other.addEventListener('input', () => {
+          const n = Number(other.value);
+          btn.disabled = !(Number.isInteger(n) && n >= 1);
+        });
+        btn.addEventListener('click', () => {
+          const n = Number(other.value);
+          P.toast(toast(n));
+          setTimeout(() => (location.href = go(n)), 700);
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Báo cáo kiểm soát · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/control: ControlReportsScreen (ControlReports.tsx, S19/S19a/S19d, ADR-030). The server sends columns and
+      // rows (labels from apps/api/src/sync/control-reports.service.ts); the screen draws every report the same way.
+      // ?tab=rp02|rp03|rp06|rp10|compare|rp11|activity|audit, ?view=bill (rp03), ?programme= (rp03), ?who=&col= / ?kind= (audit).
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Báo cáo kiểm soát', nav: 'control' });
+      const D = P.D;
+      const tab = P.param('tab', 'rp02');
+      const DAY = '2026-11-27';
+      const self = (q) => `office-control.html?${q}${as !== 'accountant' ? `&as=${as}` : ''}`;
+      const link = (href, text, label) =>
+        `<button type="button" class="link-button" data-go="${href}"${label ? ` aria-label="${P.esc(label)}"` : ''}>${P.esc(text)}</button>`;
+      const openBill = (no) => link(`office-sales.html?report=rp01a&bill=${encodeURIComponent(no)}`, no);
+      const sum = (rows, k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+      const d = '27/11/2026';
+
+      // ---------- per-report columns [key, label, kind] and rows ----------
+      const orderOf = { S3: 'ĐH-0044', S6: 'ĐH-0047', T3: 'ĐH-0039' };
+      const orderedAt = { S3: '19:43', S6: '20:09', T3: '18:45' };
+      const waiterOf = { S3: 'Đỗ Thị Lan', S6: 'Hoàng Minh Khoa', T3: 'Nguyễn Văn Tùng' };
+      const mins = (a, b) => (+b.slice(0, 2) * 60 + +b.slice(3)) - (+a.slice(0, 2) * 60 + +a.slice(3));
+      const billOf = (no) => D.bills.find((b) => b.no === no);
+
+      const R = {};
+      R.rp02 = () => {
+        const rows = D.cancellations.map((c) => ({
+          reason: c.reason, date: d, time: c.at, orderNo: orderOf[c.table], table: c.table, value: c.amount,
+          orderer: waiterOf[c.table], canceller: c.by, item: c.item, quantity: c.qty, approver: c.approver ?? '', note: '',
+          orderedAt: `${d} ${orderedAt[c.table]}`, minutes: mins(orderedAt[c.table], c.at), state: c.printed ? 'Đã in' : 'Chưa in', action: 'Hủy món',
+        }));
+        const all = sum(rows, 'value');
+        const summary = rows
+          .map((r) => ({ reason: r.reason, n: 1, value: r.value, share: ((r.value * 100) / all).toFixed(2) }))
+          .sort((a, b) => b.value - a.value);
+        return {
+          cols: [
+            ['reason', 'Lý do hủy'], ['date', 'Ngày hủy'], ['time', 'Giờ hủy'], ['orderNo', 'Số order'], ['table', 'Bàn'],
+            ['value', 'Giá trị hủy', 'money'], ['orderer', 'NVPV'], ['canceller', 'Người hủy'], ['item', 'Món'],
+            ['quantity', 'SL hủy', 'number'], ['approver', 'Người duyệt'], ['note', 'Ghi chú lý do'], ['orderedAt', 'Giờ gọi', 'time'],
+            ['minutes', 'Phút từ lúc gọi', 'number'], ['state', 'Trạng thái lúc hủy'], ['action', 'Loại'],
+          ],
+          rows,
+          total: { value: all, quantity: String(sum(rows, 'quantity')) },
+          summary: {
+            cols: [['reason', 'Lý do hủy'], ['n', 'Số dòng', 'number'], ['value', 'Giá trị hủy', 'money'], ['share', 'Tỷ lệ (%)', 'number']],
+            rows: summary,
+          },
+        };
+      };
+      const view = P.param('view', 'source');
+      const programme = P.param('programme', '');
+      R.rp03 = () => {
+        const ds = D.discounts.filter((x) => !programme || x.programme === programme);
+        const promo = (code) => D.promotions.find((p) => p.code === code);
+        if (view === 'bill') {
+          const rows = ds.map((x, i) => {
+            const b = billOf(x.bill);
+            const before = b.total + x.amount;
+            const goods = Math.round((before * 1000) / 1085);
+            return {
+              stt: i + 1, billNo: x.bill, billDate: d, customer: '', goods, fee: 0, feePre: 0, revBefore: before, promo: x.amount,
+              delivery: 0, revAfter: b.total, rate: ((x.amount * 100) / before).toFixed(2), free: 0,
+              reason: x.programme ? promo(x.programme).name : x.reason, cashier: b.cashier,
+            };
+          });
+          return {
+            cols: [
+              ['stt', 'STT', 'number'], ['billNo', 'Số hóa đơn', 'bill'], ['billDate', 'Ngày HĐ'], ['customer', 'Khách hàng'],
+              ['goods', 'Tiền hàng trước thuế', 'money'], ['fee', 'Tiền phí', 'money'], ['feePre', 'Tiền phí trước thuế', 'money'],
+              ['revBefore', 'Doanh thu trước KM', 'money'], ['promo', 'Khuyến mại', 'money'], ['delivery', 'Chiết khấu ĐTGH', 'money'],
+              ['revAfter', 'Doanh thu sau KM', 'money'], ['rate', 'Tỷ lệ KM', 'number'], ['free', 'Số lượng món mời', 'number'],
+              ['reason', 'Lý do khuyến mại'], ['cashier', 'Thu ngân'],
+            ],
+            rows,
+            total: { goods: sum(rows, 'goods'), fee: 0, feePre: 0, revBefore: sum(rows, 'revBefore'), promo: sum(rows, 'promo'), delivery: 0, revAfter: sum(rows, 'revAfter') },
+          };
+        }
+        const rows = ds.map((x) => {
+          const b = billOf(x.bill);
+          const p = x.programme && promo(x.programme);
+          return {
+            billNo: x.bill, table: x.table, area: P.area(P.table(x.table).area).name, paidAt: `${d} ${b.at}`,
+            programme: p ? `${p.code} · ${p.name}` : '', level: 'Hóa đơn', itemGroup: '', percent: p && p.value.endsWith('%') ? p.value.replace('%', '') : '',
+            amount: x.amount, discounter: x.by, approver: x.inCatalogue ? '' : D.users.owner.name, reason: x.inCatalogue ? '' : x.reason,
+            revBefore: b.total + x.amount, revAfter: b.total, rate: ((x.amount * 100) / (b.total + x.amount)).toFixed(2), cashier: b.cashier,
+          };
+        });
+        return {
+          cols: [
+            ['billNo', 'Số hóa đơn', 'bill'], ['table', 'Bàn'], ['area', 'Khu vực'], ['paidAt', 'Giờ thanh toán', 'time'],
+            ['programme', 'Chương trình'], ['level', 'Cấp giảm'], ['itemGroup', 'Nhóm món'], ['percent', '%', 'number'],
+            ['amount', 'Số tiền giảm', 'money'], ['discounter', 'Người giảm'], ['approver', 'Người duyệt'], ['reason', 'Lý do'],
+            ['revBefore', 'Doanh thu trước KM', 'money'], ['revAfter', 'Doanh thu sau KM', 'money'], ['rate', 'Tỷ lệ KM', 'number'],
+            ['cashier', 'Thu ngân'],
+          ],
+          rows,
+          total: { amount: sum(rows, 'amount'), revBefore: sum(rows, 'revBefore'), revAfter: sum(rows, 'revAfter') },
+        };
+      };
+      R.rp06 = () => ({
+        cols: [
+          ['savedAt', 'Giờ lưu', 'time'], ['effectiveFrom', 'Hiệu lực từ', 'time'], ['item', 'Món'], ['tier', 'Bậc giá'],
+          ['oldPrice', 'Giá cũ', 'money'], ['newPrice', 'Giá mới', 'money'], ['editor', 'Người sửa'], ['reason', 'Lý do'],
+        ],
+        rows: D.priceEdits.map((p) => ({
+          savedAt: `${d} ${p.at}`, effectiveFrom: `${d} ${p.at}`, item: p.item, tier: 'Giá thường', oldPrice: p.from, newPrice: p.to,
+          editor: p.by, reason: p.kind,
+        })),
+      });
+      R.rp10 = () => {
+        const rows = [
+          ['T6', 'HĐ-0031', '21:12', 1247000, 1122300, 'Giảm giá sau phiếu kiểm món', 'Võ Thị Hồng', '', 2],
+          ['S2', 'HĐ-0025', '18:58', 1178000, 1128000, 'Giảm giá sau phiếu kiểm món', 'Võ Thị Hồng', '', 1],
+          ['T2', 'HĐ-0024', '18:44', 526000, 486000, 'Giảm giá ngoài chương trình', 'Phạm Quốc Huy', D.users.owner.name, 1],
+        ].map(([table, billNo, slip, slipTotal, finalTotal, editType, editor, approver, reprints]) => ({
+          day: d, table, billNo, slipAt: `${d} ${slip}`, slipTotal, finalTotal, difference: finalTotal - slipTotal, editType, editor, approver, reprints,
+        }));
+        return {
+          cols: [
+            ['day', 'Ngày'], ['table', 'Bàn'], ['billNo', 'Số hóa đơn', 'bill'], ['slipAt', 'Phiếu kiểm món cuối', 'time'],
+            ['slipTotal', 'Tổng trên phiếu', 'money'], ['finalTotal', 'Tổng hóa đơn', 'money'], ['difference', 'Chênh lệch', 'money'],
+            ['editType', 'Loại sửa'], ['editor', 'Người sửa'], ['approver', 'Người duyệt'], ['reprints', 'Số lần in phiếu', 'number'],
+          ],
+          rows,
+          total: { slipTotal: sum(rows, 'slipTotal'), finalTotal: sum(rows, 'finalTotal'), difference: sum(rows, 'difference') },
+        };
+      };
+      R.compare = () => {
+        const rows = [
+          ['HĐ-0026', 'ĐH-0039', 'Lẩu Thái hải sản', 0, 1, 1, 0, 0, 'Nguyễn Văn Tùng', '18:40 - 19:31', 0, -299000, 'T3'],
+          ['HĐ-0025', 'ĐH-0038', 'Bia Tiger lon', 10, 12, 0, 2, 0, 'Nguyễn Văn Tùng', '18:11 - 19:05', 0, -50000, 'S2'],
+          ['HĐ-0030', 'ĐH-0046', 'Ghẹ hấp bia', 1, 1.2, 0, 0, -0.2, 'Hoàng Minh Khoa', '20:18 - 21:25', 0, -114000, 'L2'],
+        ].map(([billNo, orderNo, item, billed, ordered, cancelled, returned, changed, waiter, inOut, transferred, value, table]) => ({
+          billNo, orderNo, item, billed, ordered, diff: P.qty(Math.round((billed - ordered) * 10) / 10), cancelled, returned,
+          changed: P.qty(changed), cashier: 'Võ Thị Hồng', waiter, date: d, inOut, transferred, value, table,
+        }));
+        return {
+          cols: [
+            ['billNo', 'Số hóa đơn', 'bill'], ['orderNo', 'Số Order'], ['item', 'Tên món'], ['billed', 'SL trên hóa đơn', 'number'],
+            ['ordered', 'SL trên order', 'number'], ['diff', 'SL chênh lệch', 'number'], ['cancelled', 'Hủy món', 'number'],
+            ['returned', 'Khách trả lại (kiểm đồ)', 'number'], ['changed', 'Thay đổi SL khi tính tiền', 'number'], ['cashier', 'Thu ngân'],
+            ['waiter', 'Phục vụ'], ['date', 'Ngày'], ['inOut', 'Giờ vào - ra'], ['transferred', 'Chuyển bàn', 'number'],
+            ['value', 'Giá trị chênh lệch', 'money'], ['table', 'Bàn'],
+          ],
+          rows: rows.map((r) => ({ ...r, ordered: P.qty(r.ordered) })),
+          total: { value: sum(rows, 'value') },
+        };
+      };
+      R.rp11 = () => ({
+        cols: [
+          ['day', 'Ngày'], ['premise', 'Cơ sở'], ['table', 'Bàn'], ['billNo', 'Số hóa đơn', 'bill'], ['version', 'Phiên bản', 'number'],
+          ['changeType', 'Loại thay đổi'], ['difference', 'Chênh lệch', 'money'], ['actor', 'Người thực hiện'], ['approver', 'Người duyệt'],
+          ['reason', 'Lý do'], ['invoiceNo', 'Hóa đơn CukCuk'], ['adjustmentNo', 'Hóa đơn điều chỉnh'],
+        ],
+        rows: [
+          { day: d, premise: D.premise.name, table: 'S5', billNo: 'HĐ-0027', version: 1, changeType: 'Hủy hóa đơn đã thanh toán, hoàn tiền',
+            difference: -392000, actor: 'Võ Thị Hồng', approver: D.users.owner.name, reason: 'In nhầm bàn, đã lập lại HĐ-0028', invoiceNo: '', adjustmentNo: '' },
+        ],
+        total: { difference: -392000 },
+      });
+      // activity (FR-10.05): ACTIVITY_COLUMNS of packages/domain/src/control.ts
+      const ACT = [
+        ['logins', 'Đăng nhập', ['auth.login']],
+        ['orders', 'Gọi món', ['order.send']],
+        ['cancellations', 'Hủy món', ['order.cancel', 'session.cancel', 'order.return']],
+        ['discounts', 'Giảm giá', ['discount.apply', 'discount.choose']],
+        ['reprints', 'In lại', ['bill.reprint', 'print.reprint']],
+        ['transfers', 'Chuyển / gộp bàn', ['table.table', 'table.move_items', 'table.transfer', 'table.merge']],
+      ];
+      R.activity = () => ({
+        cols: [['person', 'Nhân viên'], ...ACT.map(([k, l]) => [k, l, 'number'])],
+        rows: [
+          [D.users.waiter.name, 1, 14, 1, 0, 0, 1],
+          ['Đỗ Thị Lan', 1, 11, 1, 0, 1, 0],
+          ['Hoàng Minh Khoa', 1, 12, 1, 0, 0, 1],
+          [D.users.cashier.name, 1, 0, 0, 2, 1, 0],
+          [D.users.manager.name, 2, 0, 0, 1, 0, 0],
+          [D.users.cukcuk_entry.name, 1, 0, 0, 0, 0, 0],
+        ].map(([person, ...n]) => ({ person, ...Object.fromEntries(ACT.map(([k], i) => [k, n[i]])) })),
+      });
+      const auditRows = [
+        ['21:38', D.users.waiter.name, 'order.send', 'Đơn', 'ĐH-0044', 'Bàn S3, đợt 2: Ốc giác nướng mỡ hành × 1'],
+        ['21:36', 'Đỗ Thị Lan', 'order.cancel', 'Dòng gọi món', 'ĐH-0044', 'Sò huyết rang me × 1, lý do: Khách đổi món, duyệt: Phạm Quốc Huy'],
+        ['21:30', D.users.cashier.name, 'bill.print', 'Hóa đơn', 'HĐ-0031', 'Bàn T6, 1.122.300đ'],
+        ['21:29', D.users.cashier.name, 'discount.choose', 'Giảm giá', 'HĐ-0031', 'SINHNHAT10, 124.700đ'],
+        ['21:22', D.users.cashier.name, 'bill.print', 'Hóa đơn', 'HĐ-0029', 'Bàn S4, 554.000đ'],
+        ['21:17', D.users.waiter.name, 'order.send', 'Đơn', 'ĐH-0051', 'Bàn T4, đợt 1: 3 dòng'],
+        ['20:31', 'Hoàng Minh Khoa', 'table.transfer', 'Bàn', 'S6', 'Chuyển S6 → T5'],
+        ['20:14', 'Hoàng Minh Khoa', 'order.cancel', 'Dòng gọi món', 'ĐH-0047', 'Bia Tiger lon × 2, lý do: Gọi nhầm'],
+        ['19:58', D.users.cashier.name, 'bill.cancel_paid', 'Hóa đơn', 'HĐ-0027', 'In nhầm bàn, hoàn 392.000đ, duyệt: Lương Thị Mai'],
+        ['19:22', D.users.waiter.name, 'order.cancel', 'Dòng gọi món', 'ĐH-0039', 'Lẩu Thái hải sản × 1, lý do: Món ra chậm, khách không dùng'],
+        ['18:50', D.users.manager.name, 'discount.apply', 'Giảm giá', 'HĐ-0024', 'Giảm 40.000đ ngoài chương trình: Khách quen của chủ quán'],
+        ['16:07', D.users.manager.name, 'price.market_confirm', 'Giá', 'CU01', 'Cua rang me: 620.000đ → 650.000đ'],
+        ['15:52', D.users.cashier.name, 'auth.login', 'Phiên', '', 'Máy tính quầy thu ngân'],
+        ['15:40', D.users.accountant.name, 'price.edit', 'Giá', 'OH01', 'Ốc hương rang muối ớt, Giá thường: 129.000đ → 135.000đ'],
+      ];
+      const KINDS = [
+        ['all', 'Tất cả', ''], ['cancel', 'Hủy và trả món', 'order.cancel,session.cancel,order.return'], ['discount', 'Giảm giá', 'discount.*'],
+        ['bill', 'Hóa đơn', 'bill.*'], ['price', 'Giá', 'price.*'], ['table', 'Chuyển và gộp bàn', 'table.*'], ['print', 'In', 'print.*'],
+        ['account', 'Tài khoản và quyền', 'account.*,role_permission.*,user.*'], ['auth', 'Đăng nhập', 'auth.*'],
+      ];
+      const kind = P.param('kind', 'all');
+      const who = P.param('who');
+      const whoCol = ACT.find((a) => a[0] === P.param('col'));
+      const matches = (action, list) => list.split(',').some((p) => (p.endsWith('*') ? action.startsWith(p.slice(0, -1)) : action === p));
+      R.audit = () => {
+        const actions = whoCol ? whoCol[2].join(',') : KINDS.find((k) => k[0] === kind)[2];
+        return {
+          cols: [
+            ['at', 'Thời gian', 'time'], ['premise', 'Cơ sở'], ['person', 'Người thực hiện'], ['action', 'Hành động'], ['entity', 'Đối tượng'],
+            ['entityId', 'Mã đối tượng'], ['detail', 'Chi tiết'],
+          ],
+          rows: auditRows
+            .filter(([, p, a]) => (!who || p === who) && (!actions || matches(a, actions)))
+            .map(([at, person, action, entity, entityId, detail]) => ({ at: `${d} ${at}`, premise: D.premise.name, person, action, entity, entityId, detail })),
+        };
+      };
+
+      // ---------- drawing (as ReportTable) ----------
+      const cls = (c) => (c[2] === 'money' || c[2] === 'number' ? ' class="num"' : '');
+      const cell = (c, v, r) => {
+        if (v === '' || v === undefined || v === null) return '';
+        if (c[2] === 'money') return P.money(v);
+        if (c[2] === 'bill') return openBill(v);
+        if (tab === 'activity' && c[2] === 'number' && v > 0)
+          return link(self(`tab=audit&who=${encodeURIComponent(r.person)}&col=${c[0]}`), String(v), `${v} lần ${c[1]} của ${r.person}, mở nhật ký`);
+        return P.esc(v);
+      };
+      function table(data, label) {
+        if (data.rows.length === 0) return '';
+        const [lead, ...rest] = data.cols;
+        return `<div class="table-scroll short" tabindex="0" role="region" aria-label="${label}">
+          <table class="data">
+            <thead><tr>${data.cols.map((c) => `<th scope="col"${cls(c)}>${c[1]}</th>`).join('')}</tr></thead>
+            <tbody>${data.rows.map((r) => `<tr><th scope="row">${cell(lead, r[lead[0]], r)}</th>${rest.map((c) => `<td${cls(c)}>${cell(c, r[c[0]], r)}</td>`).join('')}</tr>`).join('')}</tbody>
+            ${
+              data.total
+                ? `<tfoot><tr><th scope="row">Cộng</th>${rest.map((c) => `<td${cls(c)}>${data.total[c[0]] === undefined ? '' : c[2] === 'money' ? P.money(data.total[c[0]]) : data.total[c[0]]}</td>`).join('')}</tr></tfoot>`
+                : ''
+            }
+          </table>
+        </div>`;
+      }
+
+      const TABS = [
+        ['rp02', 'RP-02 Hủy món'], ['rp03', 'RP-03 Giảm giá'], ['rp06', 'RP-06 Đổi giá'], ['rp10', 'RP-10 Phiếu kiểm món và hóa đơn'],
+        ['compare', 'So sánh order và hóa đơn'], ['rp11', 'RP-11 Sửa và hủy hóa đơn'], ['activity', 'Hoạt động nhân viên'], ['audit', 'Nhật ký'],
+      ];
+      const label = Object.fromEntries(TABS)[tab];
+      const data = R[tab]();
+      const s = data.summary;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="control-title">
+          <h2 id="control-title">Báo cáo kiểm soát và nhật ký</h2>
+          <div class="form-grid">
+            <div class="field"><label for="control-from">Từ ngày</label><input id="control-from" type="date" value="${DAY}" /></div>
+            <div class="field"><label for="control-to">Đến ngày</label><input id="control-to" type="date" value="${DAY}" /></div>
+            ${tab !== 'audit' && tab !== 'activity' && tab !== 'rp06' ? '<div class="field"><label for="control-employee">Nhân viên</label><input id="control-employee" /></div>' : ''}
+            ${
+              tab === 'audit'
+                ? `<div class="field"><label for="control-kind">Loại hành động</label><select id="control-kind">${KINDS.map(
+                    ([id, l]) => `<option value="${id}"${id === kind ? ' selected' : ''}>${l}</option>`,
+                  ).join('')}</select></div>`
+                : ''
+            }
+          </div>
+          <div class="actions" role="group" aria-label="Báo cáo kiểm soát và nhật ký">
+            ${TABS.map(([id, l]) => `<button type="button"${id === tab ? '' : ' class="secondary"'} aria-pressed="${id === tab}" data-go="${self(`tab=${id}`)}">${l}</button>`).join('')}
+          </div>
+          ${
+            tab === 'rp03'
+              ? `<div role="group" aria-label="Cách xem" class="actions">
+                  <label class="check"><input type="radio" name="rp03-view"${view === 'source' ? ' checked' : ''} data-go="${self(`tab=rp03${programme ? `&programme=${programme}` : ''}`)}" /><span>Theo nguồn giảm</span></label>
+                  <label class="check"><input type="radio" name="rp03-view"${view === 'bill' ? ' checked' : ''} data-go="${self(`tab=rp03&view=bill${programme ? `&programme=${programme}` : ''}`)}" /><span>Theo hóa đơn</span></label>
+                </div>`
+              : ''
+          }
+          ${tab === 'rp03' && programme ? `<p class="status status-warning">Đang lọc: ${P.esc(programme)}. <button type="button" class="secondary" data-go="${self(`tab=rp03${view === 'bill' ? '&view=bill' : ''}`)}">Bỏ lọc</button></p>` : ''}
+          ${tab === 'audit' && who && whoCol ? `<p class="status status-warning">Đang lọc: ${P.esc(who)} — ${whoCol[1]}. <button type="button" class="secondary" data-go="${self('tab=audit')}">Bỏ lọc</button></p>` : ''}
+          <p><button type="button" class="secondary" data-toast="Đã tải ${tab}-${DAY}-${DAY}.xlsx">Tải Excel</button></p>
+          ${tab === 'rp06' ? '<p class="muted">Chưa có ngưỡng đổi giá để đánh dấu vượt ngưỡng (thiết lập cơ sở sẽ có ở bước sau).</p>' : ''}
+          <p class="muted" role="status">${data.rows.length === 0 ? 'Không có dòng nào trong khoảng ngày này.' : `${data.rows.length} dòng.`}</p>
+          ${
+            s && s.rows.length
+              ? `<div class="table-scroll short" tabindex="0" role="region" aria-label="Tổng hợp theo lý do">
+                  <table class="data">
+                    <caption>Tổng hợp theo lý do</caption>
+                    <thead><tr>${s.cols.map((c) => `<th scope="col"${cls(c)}>${c[1]}</th>`).join('')}</tr></thead>
+                    <tbody>${s.rows
+                      .map((r) => `<tr><th scope="row">${P.esc(r[s.cols[0][0]])}</th>${s.cols.slice(1).map((c) => `<td${cls(c)}>${c[2] === 'money' ? P.money(r[c[0]]) : r[c[0]]}</td>`).join('')}</tr>`)
+                      .join('')}</tbody>
+                  </table>
+                </div>`
+              : ''
+          }
+          ${table(data, label)}
+        </section>`,
+      );
+      document.getElementById('control-kind')?.addEventListener('change', (e) => (location.href = self(`tab=audit&kind=${e.target.value}`)));
+    </script>
+  </body>
+</html>

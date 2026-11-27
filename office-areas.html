@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Khu và bàn · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/areas: AreasScreen.tsx (TiersSection, AreasSection + AreaFormPanel, TablesSection + TableFormPanel).
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Khu và bàn', nav: 'areas' });
+      const D = P.D;
+      const tiers = D.tiers.map((t) => ({ ...t }));
+      const areas = D.areas.map((a, i) => ({ ...a, kind: 'dining', order: i + 1 }));
+      const tables = D.tables.map((t) => ({ ...t, name: '' }));
+      let filter = '';
+      const $ = (id) => document.getElementById(id);
+      const sel = (id, opts, v) =>
+        `<select id="${id}">${opts.map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${P.esc(l)}</option>`).join('')}</select>`;
+      const buttons = '<div class="actions"><button type="submit">Lưu</button><button type="button" class="secondary" data-cancel>Hủy</button></div>';
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section class="panel" aria-labelledby="tiers-title">
+          <h2 id="tiers-title">Bảng giá</h2>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Bảng bảng giá">
+            <table class="data"><thead><tr><th scope="col">Mã</th><th scope="col">Tên</th></tr></thead><tbody id="tiers"></tbody></table>
+          </div>
+          <div id="tier-slot"></div>
+        </section>
+        <section class="panel" aria-labelledby="areas-title">
+          <h2 id="areas-title">Khu</h2>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Bảng khu">
+            <table class="data"><thead><tr>
+              <th scope="col">Tên</th><th scope="col">Bảng giá</th><th scope="col">Loại</th>
+              <th scope="col" class="num">Thứ tự</th><th scope="col" class="num">Số bàn</th><th scope="col">Thao tác</th>
+            </tr></thead><tbody id="areas"></tbody></table>
+          </div>
+          <div id="area-slot"></div>
+        </section>
+        <section class="panel" aria-labelledby="tables-title">
+          <h2 id="tables-title">Bàn</h2>
+          <div class="field"><label for="t-filter">Xem bàn của khu</label><select id="t-filter"></select></div>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Bảng bàn">
+            <table class="data"><thead><tr>
+              <th scope="col">Mã bàn</th><th scope="col">Tên bàn</th><th scope="col">Khu</th><th scope="col" class="num">Số ghế</th><th scope="col">Thao tác</th>
+            </tr></thead><tbody id="tables"></tbody></table>
+          </div>
+          <div id="table-slot"></div>
+        </section>`,
+      );
+
+      const render = () => {
+        $('tiers').innerHTML = tiers.map((t) => `<tr><th scope="row">${t.code}</th><td>${P.esc(t.name)}</td></tr>`).join('');
+        $('areas').innerHTML = areas
+          .map(
+            (a) => `<tr><th scope="row">${P.esc(a.name)}</th><td>${a.tier}</td><td>${a.kind === 'dining' ? 'Ăn tại chỗ' : 'Mang đi'}</td>
+              <td class="num">${a.order}</td><td class="num">${tables.filter((t) => t.area === a.id).length}</td>
+              <td><button type="button" class="secondary row-action" aria-label="Sửa khu ${P.esc(a.name)}" data-area="${a.id}">Sửa</button></td></tr>`,
+          )
+          .join('');
+        $('t-filter').innerHTML = [['', 'Tất cả khu'], ...areas.map((a) => [a.id, a.name])]
+          .map(([k, l]) => `<option value="${k}"${k === filter ? ' selected' : ''}>${P.esc(l)}</option>`)
+          .join('');
+        const shown = filter ? tables.filter((t) => t.area === filter) : tables;
+        $('tables').innerHTML = shown
+          .map(
+            (t) => `<tr><th scope="row">${t.id}</th><td>${P.esc(t.name)}</td><td>${P.esc(areas.find((a) => a.id === t.area).name)}</td>
+              <td class="num">${t.seats}</td>
+              <td><button type="button" class="secondary row-action" aria-label="Sửa bàn ${t.id}" data-table="${t.id}">Sửa</button></td></tr>`,
+          )
+          .join('');
+        if (!$('tier-slot').firstElementChild) $('tier-slot').innerHTML = '<div class="actions"><button type="button" class="secondary" id="add-tier">Thêm bảng giá</button></div>';
+        if (!$('area-slot').firstElementChild) $('area-slot').innerHTML = '<div class="actions"><button type="button" id="add-area">Thêm khu</button></div>';
+        if (!$('table-slot').firstElementChild) $('table-slot').innerHTML = '<div class="actions"><button type="button" id="add-table">Thêm bàn</button></div>';
+      };
+
+      /** Opens a form in a slot; on save calls apply(form) and closes it. */
+      const form = (slot, label, html, apply) => {
+        $(slot).innerHTML = `<form class="${slot === 'tier-slot' ? '' : 'subform'}" aria-label="${P.esc(label)}">${html}${buttons}</form>`;
+        const f = $(slot).querySelector('form');
+        f.addEventListener('submit', (e) => {
+          e.preventDefault();
+          apply(f);
+          $(slot).innerHTML = '';
+          render();
+          P.toast('Đã lưu');
+        });
+        f.querySelector('[data-cancel]').addEventListener('click', () => (($(slot).innerHTML = ''), render()));
+      };
+      const val = (f, id) => f.querySelector(`#${id}`).value.trim();
+
+      const tierForm = () =>
+        form(
+          'tier-slot',
+          'Thêm bảng giá',
+          `<div class="form-grid">
+            <div class="field"><label for="tf-code">Mã bảng giá</label><input id="tf-code" required aria-describedby="tf-hint" /><small id="tf-hint">Mã ngắn như STD hoặc AC. Mỗi khu dùng một bảng giá.</small></div>
+            <div class="field"><label for="tf-name">Tên bảng giá</label><input id="tf-name" required /></div>
+          </div>`,
+          (f) => tiers.push({ code: val(f, 'tf-code').toUpperCase(), name: val(f, 'tf-name') }),
+        );
+      const areaForm = (a) =>
+        form(
+          'area-slot',
+          a ? `Sửa khu ${a.name}` : 'Thêm khu',
+          `<div class="form-grid">
+            <div class="field"><label for="af-name">Tên khu</label><input id="af-name" required value="${P.esc(a?.name ?? '')}" /></div>
+            <div class="field"><label for="af-tier">Bảng giá của khu</label>${sel('af-tier', tiers.map((t) => [t.code, `${t.code} · ${t.name}`]), a?.tier ?? 'STD')}</div>
+            <div class="field"><label for="af-kind">Loại khu</label>${sel('af-kind', [['dining', 'Ăn tại chỗ'], ['takeaway', 'Mang đi']], a?.kind ?? 'dining')}
+              <small id="af-kind-hint" hidden>Khu mang đi tự có 20 bàn ảo, không cần thêm bàn.</small></div>
+            <div class="field"><label for="af-order">Thứ tự hiển thị</label><input id="af-order" inputmode="numeric" value="${a?.order ?? 0}" /></div>
+          </div>`,
+          (f) => {
+            const body = { name: val(f, 'af-name'), tier: val(f, 'af-tier'), kind: val(f, 'af-kind'), order: Number(val(f, 'af-order')) || 0 };
+            a ? Object.assign(a, body) : areas.push({ id: `k${areas.length + 1}`, ...body });
+          },
+        );
+      const tableForm = (t) =>
+        form(
+          'table-slot',
+          t ? `Sửa bàn ${t.id}` : 'Thêm bàn',
+          `<div class="form-grid">
+            <div class="field"><label for="tbf-area">Khu</label>${sel('tbf-area', areas.map((a) => [a.id, a.name]), t?.area ?? (filter || areas[0].id))}</div>
+            <div class="field"><label for="tbf-code">Mã bàn</label><input id="tbf-code" required value="${t?.id ?? ''}" /></div>
+            <div class="field"><label for="tbf-name">Tên bàn (tùy chọn)</label><input id="tbf-name" value="${P.esc(t?.name ?? '')}" /></div>
+            <div class="field"><label for="tbf-seats">Số ghế</label><input id="tbf-seats" inputmode="numeric" value="${t?.seats ?? 4}" /></div>
+          </div>`,
+          (f) => {
+            const body = { area: val(f, 'tbf-area'), id: val(f, 'tbf-code'), name: val(f, 'tbf-name'), seats: Number(val(f, 'tbf-seats')) || 4 };
+            t ? Object.assign(t, body) : tables.push(body);
+          },
+        );
+
+      render();
+      main.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.id === 'add-tier') tierForm();
+        else if (b.id === 'add-area') areaForm(null);
+        else if (b.id === 'add-table') tableForm(null);
+        else if (b.dataset.area) areaForm(areas.find((a) => a.id === b.dataset.area));
+        else if (b.dataset.table) tableForm(tables.find((t) => t.id === b.dataset.table));
+      });
+      main.addEventListener('change', (e) => {
+        if (e.target.id === 't-filter') (filter = e.target.value), render();
+        if (e.target.id === 'af-kind') $('af-kind-hint').hidden = e.target.value !== 'takeaway';
+      });
+    </script>
+  </body>
+</html>

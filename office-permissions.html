@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Phân quyền · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/permissions: PermissionsScreen.tsx (S02, FR-09.02): the role × action toggles and the idle-logout setting.
+      // Matrix = ACTIONS of packages/domain/src/permissions.ts (C = Được, L = Được, có giới hạn; missing = Không), in its order;
+      // actions without a Vietnamese name in messages.ts show their key, as the app does. ?as=owner|accountant.
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Phân quyền', nav: 'permissions' });
+
+      const ROLES = [
+        ['owner', 'Chủ cửa hàng'], ['accountant', 'Kế toán (Admin)'], ['manager', 'Quản lý'],
+        ['cashier', 'Thu ngân'], ['waiter', 'Phục vụ'], ['cukcuk_entry', 'Nhập CukCuk'],
+      ];
+      const MATRIX = [["order.open_and_add",{"owner":"C","manager":"C","cashier":"C","waiter":"C"}],["order.cancel_unprinted_item",{"owner":"C","manager":"C","cashier":"C","waiter":"L"}],["order.cancel_printed_food",{"owner":"C","manager":"C","cashier":"L"}],["order.cancel_printed_self_cancel_group",{"owner":"C","manager":"C","cashier":"L","waiter":"L"}],["table.transfer",{"owner":"C","manager":"L","cashier":"C","waiter":"L"}],["table.merge",{"owner":"C","manager":"L","cashier":"C"}],["item.transfer",{"owner":"C","cashier":"C"}],["bill.split",{"owner":"C","cashier":"C"}],["discount.apply",{"owner":"C","manager":"C","cashier":"C"}],["bill.pay_and_print",{"owner":"C","manager":"C","cashier":"C"}],["bill.reprint",{"owner":"C","accountant":"C","manager":"C","cashier":"L"}],["print.reprint",{"owner":"C","manager":"C","cashier":"C","waiter":"L"}],["devices.manage",{"owner":"C","accountant":"C"}],["item.sold_out",{"owner":"C","accountant":"C","manager":"C","cashier":"C"}],["shift.run",{"owner":"C","manager":"C","cashier":"C"}],["shift.close_other",{"owner":"C","manager":"C"}],["exception.review",{"owner":"C","accountant":"C"}],["print.history",{"owner":"C","manager":"C","cashier":"C","waiter":"L"}],["bill.reopen",{"owner":"C","accountant":"C"}],["price.edit",{"owner":"C","accountant":"C"}],["menu.manage",{"owner":"C","accountant":"C"}],["layout.manage",{"owner":"C","accountant":"C","manager":"C"}],["report.premise",{"owner":"C","accountant":"C","manager":"C","cashier":"L"}],["premise.health",{"owner":"C","manager":"C"}],["alerts.read",{"owner":"C","accountant":"C","manager":"C"}],["alerts.manage",{"owner":"C","accountant":"C"}],["report.reconcile",{"owner":"C","accountant":"C"}],["audit.read",{"owner":"C","accountant":"C","manager":"L"}],["users.manage",{"owner":"C","accountant":"C"}],["users.lock_own_premise",{"owner":"C","accountant":"C","manager":"L"}],["approval.cancel_printed",{"owner":"C","manager":"C"}],["return.item",{"owner":"C","manager":"C","cashier":"L","waiter":"L"}],["session.cancel_with_items",{"owner":"C","manager":"C","cashier":"L","waiter":"L"}],["bill.approve_control",{"owner":"C"}],["bill.cancel_paid",{"owner":"C","accountant":"L"}],["price.market_confirm",{"owner":"C","accountant":"C"}],["cukcuk.view",{"owner":"C","manager":"C"}],["cukcuk.mark_entered",{"accountant":"C","cukcuk_entry":"C"}],["tenant.settings",{"accountant":"C"}]];
+      const PROTECTED = ['bill.reopen', 'bill.cancel_paid', 'bill.approve_control', 'price.edit', 'price.market_confirm', 'tenant.settings', 'users.manage'];
+      const NAMES = {
+        'order.open_and_add': 'Mở bàn, gọi món', 'order.cancel_unprinted_item': 'Hủy món chưa in', 'order.cancel_printed_food': 'Hủy món đã in (đồ ăn)',
+        'order.cancel_printed_self_cancel_group': 'Hủy món đã in (nhóm tự hủy)', 'table.transfer': 'Chuyển bàn', 'table.merge': 'Gộp bàn',
+        'item.transfer': 'Chuyển món', 'bill.split': 'Tách bill', 'discount.apply': 'Giảm giá', 'bill.pay_and_print': 'Thanh toán, in bill',
+        'bill.reprint': 'In lại bill', 'bill.reopen': 'Mở lại bill đã thanh toán', 'price.edit': 'Sửa giá trong bảng giá',
+        'menu.manage': 'Quản lý thực đơn, gán trạm in', 'layout.manage': 'Quản lý khu, bàn, máy in', 'report.premise': 'Báo cáo cơ sở',
+        'audit.read': 'Xem nhật ký', 'users.manage': 'Tài khoản và phân quyền', 'users.lock_own_premise': 'Khóa nhân viên tại cơ sở',
+        'approval.cancel_printed': 'Duyệt hủy món đã in', 'return.item': 'Trả món', 'session.cancel_with_items': 'Hủy phiên bàn đã có món',
+        'bill.cancel_paid': 'Hủy bill đã thanh toán, hoàn tiền', 'price.market_confirm': 'Chốt giá theo thị trường',
+        'cukcuk.mark_entered': 'Đánh dấu đã nhập CukCuk', 'tenant.settings': 'Cài đặt cửa hàng',
+      };
+      // the tenant's stored overrides (inline): Ốc Sam took discounts away from the manager
+      const overrides = { 'manager|discount.apply': 'none' };
+      const word = (g) => (g === undefined ? 'Không' : g === 'C' ? 'Được' : 'Được, có giới hạn');
+
+      const cell = (action, grants, role, roleName) => {
+        if (role === 'owner') return `<td>${word(grants.owner)}</td>`;
+        const o = overrides[`${role}|${action}`];
+        const name = NAMES[action] ?? action;
+        const prot = PROTECTED.includes(action);
+        return `<td><select aria-label="${P.esc(name)}, ${roleName}">
+            <option value="default"${!o ? ' selected' : ''}>Theo mặc định: ${word(grants[role])}</option>
+            <option value="none"${o === 'none' ? ' selected' : ''}>Không</option>
+            ${prot ? '' : `<option value="full"${o === 'full' ? ' selected' : ''}>Được</option>`}
+          </select>${o ? '<span class="chip chip-warning">Đã đổi</span>' : ''}</td>`;
+      };
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p>Mỗi ô là quyền của vai trò với một thao tác. Thay đổi có hiệu lực ở lần thao tác kế tiếp và tới cơ sở trong ít giây. Cột Chủ cửa hàng không đổi được.</p>
+        <div role="status" aria-live="polite" id="matrix-notice"></div>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Bảng phân quyền theo vai trò">
+          <table class="data">
+            <thead><tr><th scope="col">Thao tác</th>${ROLES.map(([, n]) => `<th scope="col">${n}</th>`).join('')}</tr></thead>
+            <tbody>${MATRIX.map(
+              ([action, grants]) => `<tr data-action="${action}">
+                <th scope="row">${P.esc(NAMES[action] ?? action)}${PROTECTED.includes(action) ? '<small class="block muted">Quyền nhạy cảm: chỉ có thể thu hồi, không thể mở thêm.</small>' : ''}</th>
+                ${ROLES.map(([r, n]) => cell(action, grants, r, n)).join('')}
+              </tr>`,
+            ).join('')}</tbody>
+          </table>
+        </div>
+        <section class="panel" aria-labelledby="idle-title">
+          <h2 id="idle-title">Tự đăng xuất khi không thao tác</h2>
+          <div class="field"><label for="idle-minutes">Số phút không thao tác</label>
+            <input id="idle-minutes" inputmode="numeric" value="120" aria-describedby="idle-hint"${as === 'accountant' ? '' : ' disabled'} />
+            <small id="idle-hint">0 là tắt. Mặc định 120 phút. Chỉ kế toán đổi được.</small></div>
+          <div id="idle-problem"></div>
+          <div role="status" aria-live="polite" id="idle-notice"></div>
+          ${as === 'accountant' ? '<div class="actions"><button type="button" id="idle-save">Lưu</button></div>' : ''}
+        </section>`,
+      );
+
+      // a change is stored at once (no save button), and the cell then says "Đã đổi" unless it went back to the default
+      main.addEventListener('change', (e) => {
+        const sel = e.target.closest('td select');
+        if (!sel) return;
+        const td = sel.parentElement;
+        td.querySelector('.chip')?.remove();
+        if (sel.value !== 'default') td.insertAdjacentHTML('beforeend', '<span class="chip chip-warning">Đã đổi</span>');
+        document.getElementById('matrix-notice').innerHTML = '<p class="saved">Đã lưu</p>';
+        P.toast('Đã lưu');
+      });
+      document.getElementById('idle-save')?.addEventListener('click', () => {
+        const n = Number(document.getElementById('idle-minutes').value);
+        const ok = Number.isInteger(n) && n >= 0 && n <= 1440;
+        document.getElementById('idle-problem').innerHTML = ok
+          ? ''
+          : '<div role="alert" class="status status-danger"><strong>Số phút phải từ 0 đến 1440.</strong>Nhập lại số phút rồi lưu.</div>';
+        document.getElementById('idle-notice').innerHTML = ok ? '<p class="saved">Đã lưu</p>' : '';
+        if (ok) P.toast('Đã lưu');
+      });
+    </script>
+  </body>
+</html>

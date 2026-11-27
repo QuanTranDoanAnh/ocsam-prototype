@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Trực tiếp · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/live: the owner's live view (LiveScreen.tsx, S20 + health S22/S27, backup S22b). ?as=owner|accountant|manager.
+      const as = P.param('as', 'owner');
+      const main = P.frame({ surface: 'office', user: as, title: 'Trực tiếp', nav: 'live' });
+      const D = P.D;
+      const H = D.health;
+
+      // StateBadge (shared/HealthBadge.tsx): colour + icon + word
+      const badge = (state) => {
+        const cls = state === 'ok' ? 'ok' : state === 'warning' ? 'warning' : 'danger';
+        const icon = { ok: '✔', warning: '▲', fault: '✖' }[state];
+        const word = { ok: 'Bình thường', warning: 'Cần chú ý', fault: 'Có lỗi' }[state];
+        return `<span class="chip chip-${cls}"><span aria-hidden="true">${icon} </span>${word}</span>`;
+      };
+
+      // Today's figures from the sales ledger (27/11, still open): net = salesByDay revenue; method split inline.
+      const today = D.salesByDay[D.salesByDay.length - 1];
+      const rev = {
+        net: today.revenue,
+        gross: today.revenue + today.discount,
+        discount: today.discount,
+        bills: today.bills,
+        covers: today.guests,
+        average: Math.round(today.revenue / today.bills),
+      };
+      const methods = [
+        ['Tiền mặt', 9412000],
+        ['Chuyển khoản', 10868000],
+        ['Thẻ', 1660000],
+      ];
+      const hours = [
+        [16, 1, 312000],
+        [17, 3, 1486000],
+        [18, 6, 3948000],
+        [19, 9, 6512000],
+        [20, 7, 5236000],
+        [21, 5, 4446000],
+      ];
+      const liveState = { open: 'Đang gọi món', awaiting_payment: 'Chờ thanh toán', bill_printed: 'Đã in hóa đơn' };
+      const open = D.tables.filter((t) => t.session).map((t) => ({ t, s: P.session(t.session) }));
+      const guests = open.reduce((a, o) => a + o.s.guests, 0);
+
+      // overall state: the worst of printers, sync, copy and disk
+      const parts = [...H.printers.map((p) => p.state), H.sync.state, H.copy.state, H.disk.state];
+      const overall = parts.includes('fault') ? 'fault' : parts.includes('warning') ? 'warning' : 'ok';
+      const healthRows = `
+        <tr><th scope="row">Tình trạng máy chủ và máy in</th>
+          <td>${badge(overall)}${overall === 'ok' ? '<br />Máy in, đường truyền và ổ đĩa đều bình thường.' : ''}</td></tr>
+        ${H.printers
+          .filter((p) => p.state !== 'ok')
+          .map((p) => `<tr><th scope="row">${P.esc(p.name)}</th><td>${badge(p.state)}<br />${P.esc(p.text)}</td></tr>`)
+          .join('')}
+        ${H.sync.state !== 'ok' ? `<tr><th scope="row">Gửi dữ liệu lên trung tâm</th><td>${badge(H.sync.state)}<br />Chậm ${H.sync.lagSeconds} giây</td></tr>` : ''}
+        ${H.copy.state !== 'ok' ? `<tr><th scope="row">Bản sao dự phòng</th><td>${badge(H.copy.state)}<br />Bản sao gần nhất lúc ${H.copy.last}</td></tr>` : ''}
+        ${H.disk.state !== 'ok' ? `<tr><th scope="row">Ổ đĩa</th><td>${badge(H.disk.state)}<br />Ổ đĩa còn trống ${H.disk.freePercent}%</td></tr>` : ''}`;
+      // the centre's backup ran at 07:00 and is fine, so the backup row (shown only when not ok) is absent
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="live-title">
+          <h2 id="live-title">Doanh thu trực tiếp</h2>
+          <p class="muted" role="status">Cập nhật lúc ${H.sync.lastPush}, ngày kinh doanh 2026-11-27. Tự làm mới mỗi 15 giây.</p>
+
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Tình trạng cơ sở">
+            <table class="data">
+              <caption>Tình trạng cơ sở</caption>
+              <tbody>${healthRows}</tbody>
+            </table>
+          </div>
+
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Doanh thu hôm nay">
+            <table class="data">
+              <caption>Doanh thu hôm nay</caption>
+              <tbody>
+                <tr><th scope="row">Doanh thu thuần</th><td><strong>${P.money(rev.net)}</strong></td></tr>
+                <tr><th scope="row">Doanh thu gộp</th><td>${P.money(rev.gross)}</td></tr>
+                <tr><th scope="row">Giảm giá</th><td>${P.money(rev.discount)}</td></tr>
+                <tr><th scope="row">Số hóa đơn</th><td>${rev.bills}</td></tr>
+                <tr><th scope="row">Số khách</th><td>${rev.covers}</td></tr>
+                <tr><th scope="row">Bình quân mỗi hóa đơn</th><td>${P.money(rev.average)}</td></tr>
+                ${methods.map(([n, v]) => `<tr><th scope="row">Đã thu: ${n}</th><td>${P.money(v)}</td></tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Bàn đang phục vụ">
+            <table class="data">
+              <caption>Bàn đang phục vụ: ${open.length} bàn, ${guests} khách.</caption>
+              <thead><tr><th scope="col">Bàn</th><th scope="col">Số khách</th><th scope="col">Trạng thái</th><th scope="col">Từ lúc</th></tr></thead>
+              <tbody>
+                ${open
+                  .map(
+                    ({ t, s }) =>
+                      `<tr><th scope="row">${t.id}</th><td>${s.guests}</td><td>${liveState[t.state]}</td><td>${s.openedAt}</td></tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Doanh thu theo giờ">
+            <table class="data">
+              <caption>Doanh thu theo giờ</caption>
+              <thead><tr><th scope="col">Giờ</th><th scope="col">Số hóa đơn</th><th scope="col">Doanh thu thuần</th></tr></thead>
+              <tbody>
+                ${hours.map(([h, b, n]) => `<tr><th scope="row">${h}:00</th><td>${b}</td><td>${P.money(n)}</td></tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Món bán chạy">
+            <table class="data">
+              <caption>Món bán chạy</caption>
+              <thead><tr><th scope="col">Món</th><th scope="col">Số lượng</th><th scope="col">Doanh thu thuần</th></tr></thead>
+              <tbody>
+                ${D.topItems
+                  .map((b) => `<tr><th scope="row">${P.esc(P.item(b.code).name)}</th><td>${P.qty(b.qty)}</td><td>${P.money(b.revenue)}</td></tr>`)
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+        </section>`,
+      );
+    </script>
+  </body>
+</html>

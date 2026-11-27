@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Thu ngân · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /cashier home: CashierSurface (cashier/index.tsx) with the tabs, ShiftStrip.tsx, PrintAlerts and the
+      // CheckoutScreen.tsx list with nothing chosen yet. ?shift=closed shows "Chưa mở ca"; ?paid=HĐ-…&table=… is the
+      // message after a payment (that table has left the list).
+      const D = P.D;
+      const esc = P.esc;
+      const money = P.money;
+      const main = P.frame({ surface: 'cashier', user: 'cashier', title: 'Thu ngân' });
+      const paid = P.param('paid');
+      const paidTable = P.param('table');
+      const shiftClosed = P.param('shift') === 'closed';
+      const sh = D.shifts[0];
+      const typed = (n) => (n === null || n === '' ? '' : P.num(n));
+      const digits = (s) => (String(s).replace(/\D/g, '') === '' ? null : Number(String(s).replace(/\D/g, '').slice(0, 13)));
+      // expected cash = opening + cash payments - cash refunds (HĐ-0027 was paid in cash, then refunded)
+      const expected = sh.opening + D.bills.filter((b) => b.method === 'cash' && b.state !== 'cancelled').reduce((a, b) => a + b.total, 0);
+
+      const rows = D.tables
+        .filter((t) => t.session && t.state !== 'empty' && t.id !== paidTable)
+        .map((t) => {
+          const s = P.session(t.id);
+          const b = s.bill ? D.bills.find((x) => x.no === s.bill) : null;
+          return { t, total: b ? b.total : P.sessionDue(s) };
+        });
+
+      const strip = shiftClosed
+        ? `<section aria-labelledby="shift-title" class="shift-strip">
+            <h3 id="shift-title">Ca làm việc</h3>
+            <div class="actions" id="shift-none">
+              <p><strong>Chưa mở ca</strong> <span class="muted">Mở ca nếu bạn muốn đếm tiền đầu ca và cuối ca. Việc bán hàng không cần mở ca.</span></p>
+              <button type="button" id="shift-open-btn">Mở ca</button>
+            </div>
+            <form id="shift-open-form" hidden>
+              <div class="field">
+                <label for="shift-window">Ca</label>
+                <select id="shift-window">${D.shifts.map((x) => `<option>${esc(x.name)}</option>`).join('')}</select>
+              </div>
+              <div class="field">
+                <label for="shift-opening">Tiền đầu ca</label>
+                <input id="shift-opening" inputmode="numeric" autocomplete="off" />
+                <div class="denominations" role="group" aria-label="Số tiền hay dùng">
+                  ${[0, 500000, 1000000, 2000000].map((v) => `<button type="button" class="secondary" data-start="${v}">${money(v)}</button>`).join('')}
+                </div>
+              </div>
+              <div class="actions">
+                <button type="button" data-toast="Ca chiều, bạn mở lúc ${D.premise.now}" data-go="cashier.html">Mở ca</button>
+                <button type="button" class="secondary" id="shift-open-cancel">Thôi</button>
+              </div>
+            </form>
+          </section>`
+        : `<section aria-labelledby="shift-title" class="shift-strip">
+            <h3 id="shift-title">Ca làm việc</h3>
+            <p role="status">Ca ${esc(sh.name.replace(/^Ca /, ''))}, bạn mở lúc ${sh.opened}</p>
+            <div class="actions"><button type="button" data-open="dlg-shift-close">Đóng ca</button></div>
+          </section>`;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="actions" role="group" aria-label="Thu ngân">
+          <button type="button" aria-pressed="true">Thanh toán</button>
+          <button type="button" class="secondary" aria-pressed="false" data-go="cashier-bills.html">Tra cứu hóa đơn</button>
+        </div>
+        ${strip}
+        <section role="alert" aria-label="Phiếu bếp không in được" class="status status-danger print-alert">
+          <strong>Trạm Nướng không in được phiếu</strong>
+          <span>Bàn S3: Ốc giác nướng mỡ hành × 1 (máy in hết giấy).</span>
+          <div class="actions">
+            <button type="button" data-toast="Đã gửi lệnh in lại phiếu Nướng">In lại</button>
+            <button type="button" class="secondary" data-toast="Đã xử lý">Đã xử lý</button>
+          </div>
+        </section>
+        <div class="checkout">
+          <section aria-labelledby="checkout-list-title" class="checkout-list">
+            <h2 id="checkout-list-title">Bàn chờ thanh toán</h2>
+            ${paid ? `<p role="status" class="status status-ok">Đã thanh toán ${esc(paid)}. Bàn đã trống.</p>` : ''}
+            ${
+              rows.length === 0
+                ? '<p class="muted">Không có bàn nào đang chờ thanh toán.</p>'
+                : `<ul aria-label="Danh sách bàn chờ thanh toán" class="checkout-rows">
+                    ${rows
+                      .map(
+                        (r) => `<li><button type="button" class="checkout-row" aria-pressed="false" data-go="cashier-table.html?table=${r.t.id}">
+                          <span class="checkout-code">Bàn ${r.t.id}</span>
+                          <span class="muted">${esc(P.area(r.t.area).name)}</span>
+                          <span class="chip chip-state">${P.TABLE_STATE[r.t.state]}</span>
+                          <span class="money">${money(r.total)}</span>
+                        </button></li>`,
+                      )
+                      .join('')}
+                  </ul>`
+            }
+          </section>
+          <section aria-live="polite" class="checkout-detail">
+            <p class="muted">Chọn một bàn ở bên trái để thanh toán.</p>
+          </section>
+        </div>
+
+        <dialog id="dlg-shift-close" class="proto-sheet" aria-labelledby="dlg-shift-close-title">
+          <h2 id="dlg-shift-close-title">Đóng ca</h2>
+          <p class="muted">Ca ${esc(sh.name.replace(/^Ca /, ''))}, bạn mở lúc ${sh.opened} · Tiền đầu ca ${money(sh.opening)}</p>
+          <div class="field">
+            <label for="shift-closing">Tiền đếm cuối ca</label>
+            <input id="shift-closing" inputmode="numeric" autocomplete="off" value="${P.num(3850000)}" />
+          </div>
+          <div class="actions">
+            <button type="button" id="shift-close-count">Đóng ca và đếm tiền</button>
+            <button type="button" class="secondary" data-close data-open="dlg-shift-nocount">Đóng ca không đếm tiền</button>
+            <button type="button" class="secondary" data-close>Thôi</button>
+          </div>
+        </dialog>
+        <dialog id="dlg-shift-result" class="proto-sheet" aria-label="Kết quả đóng ca">
+          <div role="status" class="status status-ok shift-result">
+            <strong>Kết quả đóng ca</strong>
+            <dl>
+              <dt>Tiền đầu ca</dt><dd>${money(sh.opening)}</dd>
+              <dt>Tiền cần có</dt><dd>${money(expected)}</dd>
+              <dt>Tiền đã đếm</dt><dd id="shift-counted"></dd>
+              <dt>Chênh lệch</dt><dd><strong id="shift-diff"></strong></dd>
+            </dl>
+            <p>Chỉ bạn thấy các số tiền này.</p>
+            <button type="button" class="secondary" data-go="cashier.html?shift=closed">Xong</button>
+          </div>
+        </dialog>
+        <dialog id="dlg-shift-nocount" class="proto-sheet" aria-label="Kết quả đóng ca">
+          <div role="status" class="status status-ok shift-result">
+            <strong>Kết quả đóng ca</strong>
+            <p>Ca đã đóng, không đếm tiền.</p>
+            <button type="button" class="secondary" data-go="cashier.html?shift=closed">Xong</button>
+          </div>
+        </dialog>`,
+      );
+
+      // ShiftStrip: the open form replaces "Chưa mở ca"; closing shows the result to the cashier who counted
+      document.getElementById('shift-open-btn')?.addEventListener('click', () => {
+        document.getElementById('shift-none').hidden = true;
+        document.getElementById('shift-open-form').hidden = false;
+      });
+      document.getElementById('shift-open-cancel')?.addEventListener('click', () => {
+        document.getElementById('shift-none').hidden = false;
+        document.getElementById('shift-open-form').hidden = true;
+      });
+      document.querySelectorAll('[data-start]').forEach((b) =>
+        b.addEventListener('click', () => (document.getElementById('shift-opening').value = typed(Number(b.dataset.start)))),
+      );
+      document.getElementById('shift-close-count')?.addEventListener('click', () => {
+        const counted = digits(document.getElementById('shift-closing').value) ?? 0;
+        const diff = counted - expected;
+        document.getElementById('shift-counted').textContent = money(counted);
+        document.getElementById('shift-diff').textContent =
+          diff === 0 ? 'Khớp' : diff < 0 ? `Thiếu ${P.num(-diff)}` : `Thừa ${P.num(diff)}`;
+        document.getElementById('dlg-shift-close').close();
+        document.getElementById('dlg-shift-result').showModal();
+      });
+      ['shift-closing', 'shift-opening'].forEach((id) =>
+        document.getElementById(id)?.addEventListener('input', (e) => (e.target.value = typed(digits(e.target.value)))),
+      );
+    </script>
+  </body>
+</html>

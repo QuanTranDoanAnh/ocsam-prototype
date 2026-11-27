@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Cài đặt hóa đơn · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/bill-settings: BillSettingsScreen.tsx followed by OperatingSettings.tsx, as index.tsx renders them.
+      // The bill printer is chosen on "Thông tin cơ sở" (PremiseScreen.tsx); the app has no bill preview here.
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Cài đặt hóa đơn', nav: 'billSettings' });
+      const D = P.D;
+      const field = (id, label, value, { hint, extra = '' } = {}) =>
+        `<div class="field"><label for="${id}">${label}</label><input id="${id}" value="${P.esc(value)}" ${extra}${hint ? ` aria-describedby="${id}-hint"` : ''} />${hint ? `<small id="${id}-hint">${hint}</small>` : ''}</div>`;
+      const select = (id, label, options, v) =>
+        `<div class="field"><label for="${id}">${label}</label><select id="${id}">${Object.entries(options)
+          .map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${l}</option>`)
+          .join('')}</select></div>`;
+      const check = (id, label, on) => `<div class="field"><label class="check" for="${id}"><input id="${id}" type="checkbox"${on ? ' checked' : ''} />${label}</label></div>`;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <form class="panel" aria-labelledby="bill-settings-title" id="bill-form">
+          <h2 id="bill-settings-title">Cài đặt hóa đơn</h2>
+          <p class="muted">Mẫu hóa đơn, tài khoản nhận tiền cho mã VietQR và thời gian báo hóa đơn chưa thanh toán.</p>
+          <h3>Mẫu hóa đơn</h3>
+          <div class="form-grid">
+            ${select('b-mode', 'Nội dung hóa đơn', { total: 'Chỉ in tổng tiền', itemised: 'In từng món và tổng tiền' }, 'itemised')}
+            ${field('b-tenant', 'Tên in trên hóa đơn', D.tenant.legalName, { hint: 'Lấy từ tên pháp lý của nhà hàng, do đội kỹ thuật đặt.', extra: 'disabled' })}
+            ${field('b-tax', 'Mã số thuế', D.tenant.taxCode, { extra: 'disabled' })}
+            ${field('b-address', 'Địa chỉ in trên hóa đơn', D.premise.address)}
+          </div>
+          ${check('b-vat', 'In số thuế VAT đã gồm trong giá', true)}
+          <h3>Tài khoản nhận tiền (VietQR)</h3>
+          <div class="form-grid">
+            ${field('b-bin', 'Mã ngân hàng (6 số)', '970436', { hint: 'Ví dụ MB Bank: 970422. Để trống cả hai ô để hóa đơn không có mã QR.', extra: 'inputmode="numeric"' })}
+            ${field('b-account', 'Số tài khoản', D.bank.account.replace(/\s/g, ''))}
+            ${field('b-holder', 'Tên chủ tài khoản', D.bank.holder)}
+          </div>
+          <h3>Cảnh báo</h3>
+          <div class="form-grid">
+            ${field('b-unpaid', 'Báo hóa đơn chưa thanh toán sau (phút)', '15', { extra: 'inputmode="numeric"' })}
+            ${field('b-cukcuk', 'Báo hóa đơn chưa vào CukCuk sau (phút)', '30', { extra: 'inputmode="numeric"' })}
+          </div>
+          <div data-result></div>
+          <div class="actions"><button type="submit">Lưu</button></div>
+        </form>
+
+        <form class="panel" aria-labelledby="operating-title" id="op-form">
+          <h2 id="operating-title">Thiết lập vận hành</h2>
+          <p class="muted">Các thay đổi đến mọi thiết bị trong vòng 30 giây.</p>
+          <div class="form-grid">
+            ${field('o-close', 'Giờ chốt ngày (HH:MM)', D.premise.dayCloseTime, { hint: 'Áp dụng cho mọi cơ sở của pháp nhân.' })}
+            ${field('o-idle', 'Tự đăng xuất sau (phút, 0 = không)', '120', { extra: 'inputmode="numeric"' })}
+            ${field('o-transfer', 'Nội dung chuyển khoản', '{bill} {table}', { hint: 'Dùng {bill} và {table}; tối đa 25 ký tự khi in.' })}
+            ${field('o-discount', 'Giảm giá tối đa của thu ngân (%)', '10', { hint: 'Để trống nếu không giới hạn. Khi có giới hạn, thu ngân chỉ nhập phần trăm.', extra: 'inputmode="numeric"' })}
+            ${select('o-cukcuk', 'Nhập hóa đơn vào CukCuk', { queue: 'Qua hàng đợi nhân viên nhập', off: 'Tắt' }, 'queue')}
+          </div>
+          ${check('o-guests', 'Bắt buộc nhập số khách khi mở bàn', true)}
+          <div class="form-grid">
+            <label>Logo hóa đơn (PNG hoặc JPEG, tối đa 64 KB)<input type="file" accept="image/png,image/jpeg" id="o-logo" /></label>
+          </div>
+          <p class="muted"><span id="logo-set">Đã có logo.</span> In ở đầu hóa đơn (tối đa 360 x 140 chấm).</p>
+          <button type="button" id="logo-clear">Xóa logo</button>
+          <div data-result></div>
+          <div class="actions"><button type="submit">Lưu</button></div>
+        </form>`,
+      );
+
+      const $ = (id) => document.getElementById(id);
+      $('bill-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const ok = /^\d{6}$/.test($('b-bin').value.trim()) || $('b-bin').value.trim() === '';
+        e.target.querySelector('[data-result]').innerHTML = ok
+          ? '<p role="status" class="muted">Đã lưu cài đặt hóa đơn.</p>'
+          : '<div role="alert" class="status status-danger"><strong>Có ô chưa đúng.</strong>Mã ngân hàng gồm 6 số, số tài khoản gồm chữ và số, hai ô này đi cùng nhau.</div>';
+      });
+      $('op-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        e.target.querySelector('[data-result]').innerHTML = '<p role="status" class="muted">Đã lưu.</p>';
+      });
+      $('logo-clear').addEventListener('click', () => {
+        $('logo-set').textContent = '';
+        $('logo-clear').hidden = true;
+      });
+      $('o-logo').addEventListener('change', (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        if (f.size > 64 * 1024 || !/^image\/(png|jpeg)$/.test(f.type)) {
+          $('op-form').querySelector('[data-result]').innerHTML =
+            '<div role="alert" class="status status-danger"><strong>Logo lớn hơn 64 KB hoặc không phải PNG/JPEG.</strong>Kiểm tra các ô và thử lại.</div>';
+          return;
+        }
+        $('logo-set').textContent = 'Đã có logo.';
+        $('logo-clear').hidden = false;
+      });
+    </script>
+  </body>
+</html>

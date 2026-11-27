@@ -1,0 +1,124 @@
+/* Additions for the static prototype only; everything else is the real app's CSS (app.css). Uses its tokens. */
+
+body {
+  padding-bottom: 56px; /* room for the prototype bar */
+}
+
+.proto-bar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 50;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg);
+  border-top: 2px dashed var(--border);
+}
+.proto-bar a {
+  font-weight: 600;
+}
+.proto-theme {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+}
+
+.proto-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  z-index: 60;
+  transform: translate(-50%, 16px);
+  padding: 12px 20px;
+  border-radius: 8px;
+  color: var(--surface);
+  background: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+.proto-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* screen map (index.html) */
+.proto-map {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+.proto-map h2 {
+  margin-top: 32px;
+}
+.proto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+.proto-grid a {
+  box-sizing: border-box;
+  display: block;
+  height: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+}
+.proto-grid a:hover,
+.proto-grid a:focus-visible {
+  border-color: var(--action);
+}
+.proto-grid strong {
+  display: block;
+}
+.proto-grid span {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* modal sheets: <dialog> with the app's card look */
+dialog.proto-sheet {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+dialog.proto-sheet::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+dialog.proto-sheet h2 {
+  margin-top: 0;
+}
+.proto-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* information block of the screen map (the app has danger, warning and ok only) */
+.status-info {
+  color: var(--text);
+  background: var(--info-bg);
+  border-color: var(--info);
+}
+.status-info strong {
+  display: block;
+  margin-bottom: 4px;
+}

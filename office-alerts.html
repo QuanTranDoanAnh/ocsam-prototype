@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Cảnh báo · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/alerts: AlertsScreen.tsx (S25, ADR-042). ?as=accountant|owner|manager; the manager reads only (no settings).
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Cảnh báo', nav: 'alerts' });
+      const D = P.D;
+      const canManage = as === 'owner' || as === 'accountant';
+
+      // alert kinds and roles as in packages/domain/src/alerts.ts (ALERT_KINDS order) and messages.ts alertText.kinds
+      const KINDS = [
+        ['premise.silent', 'Máy chủ cơ sở mất tín hiệu'],
+        ['printer.fault', 'Máy in lỗi hoặc hết giấy'],
+        ['sync.lag', 'Đồng bộ chậm'],
+        ['disk.low', 'Ổ đĩa sắp đầy'],
+        ['backup.overdue', 'Sao lưu quá hạn'],
+        ['cukcuk.late', 'Nhập CukCuk quá hạn'],
+        ['premise.rebuilt', 'Máy chủ cơ sở được dựng lại'],
+        ['owner.event', 'Hủy, mở lại hoặc đóng hóa đơn không thu được (gửi chủ)'],
+        ['premise.copy', 'Bản sao dự phòng của cơ sở'],
+      ];
+      const ROLES = [
+        ['owner', 'Chủ'],
+        ['accountant', 'Kế toán'],
+        ['manager', 'Quản lý cơ sở'],
+      ];
+      // DEFAULT_ALERT_ROUTES: the owner gets every kind; the accountant backup and sync; the manager the premise's own
+      const routes = new Set([
+        ...KINDS.map(([k]) => `${k}|owner`),
+        'backup.overdue|accountant',
+        'sync.lag|accountant',
+        'premise.silent|manager',
+        'printer.fault|manager',
+        'cukcuk.late|manager',
+        'premise.copy|manager',
+      ]);
+      const kindName = Object.fromEntries(KINDS);
+      const severity = { info: 'Thông tin', warning: 'Cần chú ý', fault: 'Có lỗi' };
+
+      // open alerts and the messages sent (from P.D.alerts, mapped onto the app's alert kinds)
+      const open = [
+        { severity: 'fault', kind: 'printer.fault', message: 'Máy in Nướng hết giấy, 1 phiếu đang chờ', since: '21:38 27/11', last: '21:40 27/11', n: 1 },
+      ];
+      const recent = [
+        ['21:40 27/11', 'email', 'huy@example.com', 'đã gửi', 'Máy in Nướng hết giấy, 1 phiếu đang chờ'],
+        ['21:40 27/11', 'push', 'Phạm Quốc Huy', 'đã gửi', 'Máy in Nướng hết giấy, 1 phiếu đang chờ'],
+        ['20:22 27/11', 'email', 'mai@example.com', 'đã gửi', 'Đã ổn: cơ sở gửi bù đủ dữ liệu sau 6 phút mất kết nối'],
+        ['20:22 27/11', 'email', 'minhanh@example.com', 'đã gửi', 'Đã ổn: cơ sở gửi bù đủ dữ liệu sau 6 phút mất kết nối'],
+        ['20:16 27/11', 'email', 'mai@example.com', 'đã gửi', 'Đồng bộ chậm: cơ sở chưa gửi dữ liệu lên trung tâm từ 20:10'],
+        ['20:16 27/11', 'email', 'minhanh@example.com', 'đã gửi', 'Đồng bộ chậm: cơ sở chưa gửi dữ liệu lên trung tâm từ 20:10'],
+        ['20:16 27/11', 'push', 'Lương Thị Mai', 'lỗi (thiết bị đã hủy đăng ký)', 'Đồng bộ chậm: cơ sở chưa gửi dữ liệu lên trung tâm từ 20:10'],
+      ];
+      const contacts = [
+        [D.users.owner.name, 'Chủ', 'mai@example.com', 'có'],
+        [D.users.accountant.name, 'Kế toán', 'minhanh@example.com', 'chưa'],
+        [D.users.manager.name, 'Quản lý cơ sở', 'huy@example.com', 'có'],
+      ];
+
+      const minutesField = (id, label, value) =>
+        `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="number" min="0" inputmode="numeric" value="${value}" /></div>`;
+
+      const settings = `
+        <form aria-labelledby="alerts-config-title" id="alerts-form">
+          <h3 id="alerts-config-title">Ai nhận cảnh báo nào</h3>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Ai nhận cảnh báo nào (bảng)">
+            <table class="data">
+              <thead><tr><th scope="col">Loại cảnh báo</th>${ROLES.map(([, r]) => `<th scope="col">${r}</th>`).join('')}</tr></thead>
+              <tbody>
+                ${KINDS.map(
+                  ([k, name]) =>
+                    `<tr><th scope="row">${name}</th>${ROLES.map(
+                      ([r, rn]) =>
+                        `<td><input type="checkbox" aria-label="${P.esc(name)} - ${rn}"${routes.has(`${k}|${r}`) ? ' checked' : ''} /></td>`,
+                    ).join('')}</tr>`,
+                ).join('')}
+              </tbody>
+            </table>
+          </div>
+          <h3>Thời gian chờ và nhắc lại</h3>
+          ${minutesField('grace-silent', 'Máy chủ cơ sở mất tín hiệu: chờ (phút)', 5)}
+          ${minutesField('grace-printer', 'Máy in lỗi: chờ (phút)', 2)}
+          ${minutesField('grace-default', 'Các loại khác: chờ (phút)', 5)}
+          ${minutesField('repeat', 'Nhắc lại sau (phút)', 60)}
+          ${minutesField('retry', 'Gửi lại khi lỗi sau (phút)', 5)}
+          <div class="field"><label><input type="checkbox" id="quiet" /> Giờ yên tĩnh: chỉ gửi lỗi nặng</label></div>
+          <div class="field" id="quiet-times" style="display:none">
+            <label for="quiet-from">Từ</label> <input id="quiet-from" type="time" value="22:00" />
+            <label for="quiet-to">Đến</label> <input id="quiet-to" type="time" value="07:00" />
+          </div>
+          <button type="submit">Lưu</button>
+          <p role="status" class="status status-ok" id="alerts-saved" hidden>Đã lưu.</p>
+        </form>
+        <section aria-labelledby="alerts-contacts-title">
+          <h3 id="alerts-contacts-title">Địa chỉ nhận</h3>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Địa chỉ nhận (bảng)">
+            <table class="data">
+              <thead><tr><th scope="col">Người</th><th scope="col">Vai trò</th><th scope="col">Email</th><th scope="col">Điện thoại</th><th scope="col">Gửi tin thử</th></tr></thead>
+              <tbody>
+                ${contacts
+                  .map(
+                    ([name, role, email, push]) => `<tr>
+                      <th scope="row">${P.esc(name)}</th>
+                      <td>${role}</td>
+                      <td><div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+                        <input type="email" aria-label="Email - ${P.esc(name)}" value="${email}" style="flex:1 1 12rem;min-width:0" />
+                        <button type="button" data-toast="Đã lưu.">Lưu</button></div></td>
+                      <td>${push}</td>
+                      <td><button type="button" data-toast="Đã gửi tin thử; xem kết quả trong bảng &quot;Tin đã gửi gần đây&quot;.">Gửi tin thử</button></td>
+                    </tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+        </section>`;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="alerts-title">
+          <h2 id="alerts-title">Cảnh báo gửi cho người phụ trách</h2>
+          <p class="muted">Hệ thống tự kiểm tra máy chủ cơ sở, máy in, đồng bộ, ổ đĩa và sao lưu; khi có sự cố sẽ nhắn đến người phụ trách qua email hoặc điện thoại.</p>
+          <p role="status">Kênh gửi: Email đã cài đặt; Thông báo trên điện thoại đã cài đặt.</p>
+
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Cảnh báo đang mở">
+            <table class="data">
+              <caption>Cảnh báo đang mở</caption>
+              <thead><tr><th scope="col">Nội dung</th><th scope="col">Từ</th><th scope="col">Gửi lúc</th></tr></thead>
+              <tbody>
+                ${open
+                  .map(
+                    (a) => `<tr><td><strong>${severity[a.severity]}</strong> · ${kindName[a.kind]}<br />${P.esc(a.message)}</td>
+                      <td>${a.since}</td><td>${a.last ? `${a.last} (${a.n} lần)` : 'chưa gửi (đang chờ)'}</td></tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Tin đã gửi gần đây">
+            <table class="data">
+              <caption>Tin đã gửi gần đây</caption>
+              <thead><tr><th scope="col">Lúc</th><th scope="col">Kênh</th><th scope="col">Đến</th><th scope="col">Kết quả</th><th scope="col">Nội dung</th></tr></thead>
+              <tbody>
+                ${recent.map((r) => `<tr>${r.map((c) => `<td>${P.esc(c)}</td>`).join('')}</tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <section aria-labelledby="alerts-phone-title">
+            <h3 id="alerts-phone-title">Điện thoại này</h3>
+            <p class="muted">Nhận cảnh báo ngay trên điện thoại này (cần cài ứng dụng lên màn hình chính trên iPhone).</p>
+            <p>
+              <button type="button" data-toast="Đã bật nhận cảnh báo trên điện thoại này.">Bật cảnh báo trên điện thoại này</button>
+              <button type="button" data-toast="Đã gửi tin thử; xem kết quả trong bảng &quot;Tin đã gửi gần đây&quot;.">Gửi tin thử</button>
+            </p>
+          </section>
+          ${canManage ? settings : ''}
+        </section>`,
+      );
+
+      if (canManage) {
+        const quiet = document.getElementById('quiet');
+        quiet.addEventListener('change', () => (document.getElementById('quiet-times').style.display = quiet.checked ? '' : 'none'));
+        document.getElementById('alerts-form').addEventListener('change', () => (document.getElementById('alerts-saved').hidden = true));
+        document.getElementById('alerts-form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          document.getElementById('alerts-saved').hidden = false;
+          P.toast('Đã lưu.');
+        });
+      }
+    </script>
+  </body>
+</html>

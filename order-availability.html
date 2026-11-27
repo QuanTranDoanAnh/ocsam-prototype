@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Món hết hôm nay · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order/availability: mark an item sold out today or selling again, on the premise server (AvailabilityScreen.tsx,
+      // FR-01.10). Changes stay in memory.
+      const as = P.param('as', 'manager');
+      const D = P.D;
+      const main = P.frame({ surface: 'order', user: as, title: 'Món hết hôm nay' });
+      const items = D.items.map((i) => ({ ...i, out: !!i.soldOut }));
+      const unaccent = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<p><a class="back-link" href="order-floor.html?as=${as}">Về sơ đồ bàn</a></p>
+        <p role="status" class="status status-danger market-banner">Đã quá giờ mở cửa: 1 món giá theo chợ chưa có giá hôm nay. Báo kế toán.</p>
+        <section role="alert" aria-label="Phiếu bếp không in được" class="status status-danger print-alert">
+          <strong>Trạm Nướng không in được phiếu</strong>
+          <span>Bàn S3: Ốc giác nướng mỡ hành × 1 (máy in hết giấy).</span>
+          <div class="actions">
+            <button type="button" data-toast="Đã gửi lệnh in lại phiếu.">In lại</button>
+            <button type="button" class="secondary" data-toast="Đã xử lý">Đã xử lý</button>
+            <button type="button" class="secondary" data-go="order-history.html?as=${as}">Lịch sử gửi bếp</button>
+          </div>
+        </section>
+        <section aria-labelledby="availability-title">
+          <h2 id="availability-title">Món hết hôm nay</h2>
+          <p class="muted">Đánh dấu món đã hết để nhân viên không gọi nhầm. Món tự bán lại từ đầu ngày mới. Làm được cả khi mất Internet.</p>
+          <div class="field">
+            <label for="availability-q">Tìm món</label>
+            <input id="availability-q" type="search" autocomplete="off" />
+          </div>
+          <div id="list"></div>
+        </section>`,
+      );
+
+      const q = document.getElementById('availability-q');
+      function render() {
+        const needle = unaccent(q.value.trim());
+        const shown = items
+          .filter((i) => !needle || unaccent(i.name).includes(needle) || i.code.toLowerCase().includes(needle))
+          .sort((a, b) => Number(b.out) - Number(a.out)); // sold-out first: they are the ones to set back
+        document.getElementById('list').innerHTML =
+          shown.length === 0
+            ? `<p class="muted">Không có món nào khớp.</p>`
+            : `<ul class="jobs" aria-label="Danh sách món">${shown
+                .map(
+                  (i) => `<li class="job ${i.out ? 'job-failed' : 'job-printed'}">
+                    <div class="job-main"><strong>${P.esc(i.name)}</strong>
+                      <span class="muted">${i.code} · ${P.esc(P.group(i.group).name)}</span></div>
+                    <div class="job-state"><span class="job-word">${i.out ? 'Hết hôm nay' : 'Đang bán'}</span></div>
+                    <div class="actions">${
+                      i.out
+                        ? `<button type="button" class="secondary" data-code="${i.code}" aria-label="Bán lại ${P.esc(i.name)}">Bán lại</button>`
+                        : `<button type="button" class="secondary" data-code="${i.code}" aria-label="Báo hết ${P.esc(i.name)}">Báo hết</button>`
+                    }</div>
+                  </li>`,
+                )
+                .join('')}</ul>`;
+      }
+      q.addEventListener('input', render);
+      document.getElementById('list').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-code]');
+        if (!b) return;
+        const i = items.find((x) => x.code === b.dataset.code);
+        i.out = !i.out;
+        P.toast(`${i.out ? 'Hết hôm nay' : 'Đang bán'}: ${i.name}`);
+        render();
+      });
+      render();
+    </script>
+  </body>
+</html>

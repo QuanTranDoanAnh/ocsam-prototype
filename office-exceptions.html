@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Báo cáo ngoại lệ · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/exceptions: ExceptionsScreen.tsx (S29, ADR-046, FR-10.04). Rows the fixed rules flag ("Cần xem": a printed
+      // item cancelled, a discount outside the catalogue, a price edit other than the market-price confirmation) come first;
+      // the accountant or the owner marks each reviewed with an optional note. ?as=manager reads only. ?only=1 = unreviewed only.
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Báo cáo ngoại lệ', nav: 'exceptions' });
+      const D = P.D;
+      const canReview = as === 'owner' || as === 'accountant';
+      const only = P.param('only') === '1';
+      const DAY = '2026-11-27';
+      const clock = (hhmm) => `${hhmm} 27/11/26`;
+      const billOf = (table) => D.bills.find((b) => b.table === table && b.state !== 'cancelled');
+
+      // one review is already recorded (exception_reviews is insert-only: no undo)
+      const reviewed = { 'cancel-2': { by: D.users.accountant.name, at: '21:05', note: 'Chị Mai đã duyệt tại chỗ' } };
+      const sections = [
+        {
+          kind: 'cancel',
+          name: 'Hủy món',
+          empty: 'Không có món nào bị hủy trong ngày này.',
+          items: D.cancellations.map((c, i) => ({
+            ref: `cancel-${i}`, at: c.at, flagged: c.printed, title: c.item, what: c.printed ? `${c.item} (Món đã in)` : c.item,
+            table: c.table, billNo: c.table === 'T3' ? 'HĐ-0026' : null, qty: c.qty, amount: c.amount, actor: c.by, approver: c.approver, reason: c.reason,
+          })),
+        },
+        {
+          kind: 'discount',
+          name: 'Giảm giá',
+          empty: 'Không có giảm giá nào trong ngày này.',
+          items: D.discounts.map((x, i) => {
+            const p = x.programme && D.promotions.find((q) => q.code === x.programme);
+            const title = p ? p.name : 'Giảm giá theo số tiền';
+            return {
+              ref: `discount-${i}`, at: x.at, flagged: !x.inCatalogue, title, what: x.inCatalogue ? title : `${title} (Ngoài chương trình)`,
+              table: x.table, billNo: x.bill, qty: null, amount: x.amount, actor: x.by, approver: x.inCatalogue ? null : D.users.owner.name,
+              reason: x.reason ?? '',
+            };
+          }),
+        },
+        {
+          kind: 'price',
+          name: 'Sửa giá',
+          empty: 'Không có thay đổi giá nào trong ngày này.',
+          items: D.priceEdits.map((p, i) => ({
+            ref: `price-${i}`, at: p.at, flagged: p.flagged, title: p.item,
+            what: `${p.item} (Giá thường: ${P.money(p.from)} → ${P.money(p.to)})`, table: null, billNo: null, qty: null, amount: null,
+            actor: p.by, approver: null, reason: p.kind,
+          })),
+        },
+      ];
+      // flagged first, then newest first
+      sections.forEach((s) => s.items.sort((a, b) => (b.flagged - a.flagged) || b.at.localeCompare(a.at)));
+      const all = sections.flatMap((s) => s.items);
+      const flagged = all.filter((i) => i.flagged).length;
+      const done = all.filter((i) => reviewed[i.ref]).length;
+
+      const reviewCell = (i) => {
+        const r = reviewed[i.ref];
+        if (r) return `<span class="chip chip-ok">Đã xem</span> Đã xem bởi ${P.esc(r.by)} lúc ${r.at}${r.note ? ` — ${P.esc(r.note)}` : ''}`;
+        if (i.flagged && canReview)
+          return `<div class="review-cell">
+            <input aria-label="Ghi chú cho ${P.esc(i.title)}" placeholder="Ghi chú (không bắt buộc)" maxlength="500" />
+            <button type="button" data-review="${i.ref}" aria-label="Đánh dấu đã xem: ${P.esc(i.title)}">Đã xem</button>
+          </div>`;
+        return '';
+      };
+      const section = (s) => {
+        const items = s.items.filter((i) => !only || (i.flagged && !reviewed[i.ref]));
+        const fl = s.items.filter((i) => i.flagged).length;
+        const un = s.items.filter((i) => i.flagged && !reviewed[i.ref]).length;
+        const total = s.kind === 'price' ? null : s.items.reduce((a, i) => a + i.amount, 0);
+        return `<section aria-labelledby="exc-${s.kind}" class="exc-section">
+          <h3 id="exc-${s.kind}">${s.name} <span class="muted">${s.items.length} dòng</span></h3>
+          <p>${total !== null ? `Giá trị: ${P.money(total)}. ` : ''}Cần xem ${fl}, chưa xem ${un}</p>
+          ${
+            items.length === 0
+              ? `<p>${s.empty}</p>`
+              : `<div class="table-scroll short" tabindex="0" role="region" aria-label="${s.name}">
+                  <table class="data">
+                    <thead><tr><th scope="col">Giờ</th><th scope="col">Cần xem</th><th scope="col">Nội dung</th><th scope="col">Bàn / hóa đơn</th>
+                      <th scope="col">SL</th><th scope="col">Giá trị</th><th scope="col">Người làm</th><th scope="col">Người duyệt</th>
+                      <th scope="col">Lý do</th><th scope="col">Kiểm tra</th></tr></thead>
+                    <tbody>${items
+                      .map(
+                        (i) => `<tr${i.flagged ? ' class="flagged"' : ''}>
+                          <td>${clock(i.at)}</td>
+                          <td>${i.flagged ? '<span class="chip chip-warning">Cần xem</span>' : ''}</td>
+                          <th scope="row">${P.esc(i.what)}</th>
+                          <td>${i.table ?? ''}${
+                            i.billNo
+                              ? ` <button type="button" class="link-button" data-go="office-sales.html?report=rp01a&bill=${encodeURIComponent(i.billNo)}">Xem hóa đơn ${i.billNo}</button>`
+                              : ''
+                          }</td>
+                          <td>${i.qty ?? ''}</td>
+                          <td>${i.amount && s.kind !== 'price' ? P.money(i.amount) : ''}</td>
+                          <td>${P.esc(i.actor)}</td>
+                          <td>${P.esc(i.approver ?? '')}</td>
+                          <td>${P.esc(i.reason ?? '')}</td>
+                          <td data-cell="${i.ref}">${reviewCell(i)}</td>
+                        </tr>`,
+                      )
+                      .join('')}</tbody>
+                  </table>
+                </div>`
+          }
+        </section>`;
+      };
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="exc-title">
+          <h2 id="exc-title">Báo cáo ngoại lệ buổi sáng</h2>
+          <p>Mọi món hủy, giảm giá và sửa giá của ngày. Dòng "Cần xem" là dòng cần kế toán xem lại.</p>
+          <div class="toolbar">
+            <div class="field"><label for="exc-day">Ngày kinh doanh</label><input id="exc-day" type="date" value="${DAY}" /></div>
+            <label class="check"><input type="checkbox" id="exc-only"${only ? ' checked' : ''} />Chỉ dòng cần xem mà chưa xem</label>
+            <button type="button" class="secondary" data-toast="Đã tải exceptions-${DAY}.xlsx">Tải Excel</button>
+          </div>
+          <p role="status"><strong id="exc-summary">Cần xem: ${flagged}. Đã xem: ${done}. Chưa xem: ${flagged - done}.</strong> Cơ sở gửi dữ liệu lần cuối lúc 21:40.</p>
+          ${sections.map(section).join('')}
+          <p>Xem thêm ở các báo cáo khác: RP-10 (sửa sau phiếu tạm tính), RP-11 (sửa hóa đơn đã thanh toán).</p>
+        </section>`,
+      );
+
+      document.getElementById('exc-only').addEventListener('change', (e) => {
+        location.href = `office-exceptions.html?${e.target.checked ? 'only=1' : ''}${as !== 'accountant' ? `&as=${as}` : ''}`;
+      });
+      // "Đã xem": the row now carries who and when (insert-only, no undo)
+      main.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-review]');
+        if (!b) return;
+        const note = b.parentElement.querySelector('input').value.trim();
+        reviewed[b.dataset.review] = { by: D.users[as].name, at: D.premise.now, note };
+        const i = all.find((x) => x.ref === b.dataset.review);
+        document.querySelector(`[data-cell="${b.dataset.review}"]`).innerHTML = reviewCell(i);
+        const n = all.filter((x) => reviewed[x.ref]).length;
+        document.getElementById('exc-summary').textContent = `Cần xem: ${flagged}. Đã xem: ${n}. Chưa xem: ${flagged - n}.`;
+        P.toast('Đã xem');
+      });
+    </script>
+  </body>
+</html>

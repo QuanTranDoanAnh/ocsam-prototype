@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Thông tin cơ sở · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/premise: PremiseScreen.tsx (name, address, opening time, bill printer, active).
+      // OperatingSettings.tsx is rendered on /office/bill-settings in the app, so it is on office-bill-settings.html.
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Thông tin cơ sở', nav: 'premise' });
+      const D = P.D;
+      const printers = [...D.stations.map((s) => `Máy in ${s.name}`), 'Máy in Thu ngân'];
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <form class="panel" aria-labelledby="premise-title" id="premise-form">
+          <h2 id="premise-title">Thông tin cơ sở</h2>
+          <div class="form-grid">
+            <div class="field"><label for="p-code">Mã cơ sở</label><input id="p-code" value="${D.premise.code}" disabled aria-describedby="p-code-hint" />
+              <small id="p-code-hint">Mã do đội kỹ thuật đặt, không đổi ở đây.</small></div>
+            <div class="field"><label for="p-name">Tên cơ sở</label><input id="p-name" required value="${P.esc(D.premise.name)}" /></div>
+            <div class="field"><label for="p-address">Địa chỉ</label><input id="p-address" value="${P.esc(D.premise.address)}" /></div>
+            <div class="field"><label for="p-open">Giờ mở cửa</label><input id="p-open" inputmode="numeric" value="${D.premise.openingTime}" aria-describedby="p-open-hint" />
+              <small id="p-open-hint">Dạng HH:MM. Quá giờ này mà còn món giá theo chợ chưa có giá hôm nay thì báo kế toán và quản lý.</small></div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label for="p-bill">Máy in hóa đơn và phiếu kiểm món</label>
+              <select id="p-bill" aria-describedby="p-bill-hint"><option value="">Chưa chọn máy in</option>${printers
+                .map((p) => `<option${p === 'Máy in Thu ngân' ? ' selected' : ''}>${p}</option>`)
+                .join('')}</select>
+              <small id="p-bill-hint">Một máy cho cả cơ sở, thường đặt ở quầy thu ngân.</small></div>
+          </div>
+          <div class="field"><label class="check" for="p-active"><input id="p-active" type="checkbox" checked />Đang hoạt động</label>
+            <small>Tắt khi cơ sở tạm đóng cửa; dữ liệu cũ vẫn giữ nguyên.</small></div>
+          <div id="result"></div>
+          <div class="actions"><button type="submit">Lưu</button></div>
+        </form>`,
+      );
+      document.getElementById('premise-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const ok = /^([01]\d|2[0-3]):[0-5]\d$/.test(document.getElementById('p-open').value.trim());
+        document.getElementById('result').innerHTML = ok
+          ? '<p role="status" class="muted">Đã lưu thông tin cơ sở.</p>'
+          : '<div role="alert" class="status status-danger"><strong>Giờ mở cửa chưa đúng.</strong>Nhập dạng HH:MM, ví dụ 09:00.</div>';
+      });
+    </script>
+  </body>
+</html>

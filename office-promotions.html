@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Chương trình khuyến mại · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/promotions: PromotionsScreen.tsx with PromotionForm as a dialog (the app shows it inline above the list).
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Chương trình khuyến mại', nav: 'promotions' });
+      const D = P.D;
+      const KINDS = {
+        bill_percent: 'Giảm % cả hóa đơn',
+        bill_amount: 'Giảm số tiền cả hóa đơn',
+        group_percent: 'Giảm % một nhóm món',
+        item_percent: 'Giảm % một món',
+        free_item: 'Tặng món',
+        buy_get: 'Mua m tặng n',
+      };
+      const iso = (d) => d.split('/').reverse().join('-');
+      /** The programme parameters behind data.js's descriptions (kind, numbers, daily window). */
+      const PARAMS = {
+        SINHNHAT10: { kind: 'bill_percent', percent: 10 },
+        HAPPYBIA: { kind: 'group_percent', percent: 15, group: 'bia', ws: '16:00', we: '18:00' },
+        RAUFREE: { kind: 'free_item', item: 'RM01', quantity: 1 },
+        KHACHQUEN50: { kind: 'bill_amount', amount: 50000 },
+        KHAITRUONG: { kind: 'bill_percent', percent: 20 },
+      };
+      const promos = D.promotions.map((p) => ({ ...p, ...PARAMS[p.code], retired: !p.active, vf: iso(p.from), vt: iso(p.to) }));
+      const summary = (p) =>
+        ({
+          bill_percent: () => `${p.percent}%`,
+          bill_amount: () => P.money(p.amount),
+          group_percent: () => `${p.percent}% · ${(P.group(p.group)?.name ?? '')}`,
+          item_percent: () => `${p.percent}% · ${(P.item(p.item)?.name ?? '')}`,
+          free_item: () => `${p.quantity} · ${(P.item(p.item)?.name ?? '')}`,
+          buy_get: () => `${p.buy}+${p.get} · ${(P.item(p.item)?.name ?? '')}`,
+        })[p.kind]();
+      const when = (p) => [`${p.vf} → ${p.vt}`, p.ws ? `${p.ws}–${p.we}` : ''].filter(Boolean).join(' · ');
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="promo-title">
+          <h2 id="promo-title">Chương trình khuyến mại</h2>
+          <p class="muted">Kế toán tạo chương trình; thu ngân chỉ tick để áp dụng. Chương trình không xóa, chỉ ngừng dùng.</p>
+          <div class="actions"><button type="button" id="add">Thêm chương trình</button></div>
+          <div class="table-scroll" tabindex="0" role="region" aria-label="Danh sách chương trình">
+            <table>
+              <thead><tr>
+                <th scope="col">Mã chương trình</th><th scope="col">Tên chương trình</th><th scope="col">Loại</th>
+                <th scope="col">Phần</th><th scope="col">Từ ngày</th><th scope="col"><span class="sr-only">Đang dùng</span></th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <dialog class="proto-sheet" id="dlg-promo" aria-labelledby="pf-title">
+          <h2 id="pf-title"></h2>
+          <form class="panel" id="pf">
+            <div class="form-grid">
+              <div class="field"><label for="pf-code">Mã chương trình</label><input id="pf-code" required aria-describedby="pf-code-hint" />
+                <small id="pf-code-hint">Chữ, số, gạch nối. Mã ghi vào hóa đơn và báo cáo giảm giá, không đổi sau khi tạo.</small></div>
+              <div class="field"><label for="pf-name">Tên chương trình</label><input id="pf-name" required /></div>
+              <div class="field"><label for="pf-desc">Mô tả</label><input id="pf-desc" /></div>
+              <div class="field"><label for="pf-kind">Loại</label><select id="pf-kind">${Object.entries(KINDS)
+                .map(([k, l]) => `<option value="${k}">${l}</option>`)
+                .join('')}</select></div>
+              <div class="field" data-for="bill_percent group_percent item_percent"><label for="pf-pct">Phần trăm (%)</label><input id="pf-pct" inputmode="numeric" /></div>
+              <div class="field" data-for="bill_amount"><label for="pf-amount">Số tiền (đ)</label><input id="pf-amount" inputmode="numeric" /></div>
+              <div class="field" data-for="group_percent"><label for="pf-group">Nhóm món</label><select id="pf-group"><option value="">Chọn…</option>${D.groups
+                .map((g) => `<option value="${g.id}">${P.esc(g.name)}</option>`)
+                .join('')}</select></div>
+              <div class="field" data-for="item_percent free_item buy_get"><label for="pf-filter">Món (lọc)</label><input id="pf-filter" /></div>
+              <div class="field" data-for="item_percent free_item buy_get"><label for="pf-item">Món</label><select id="pf-item"></select></div>
+              <div class="field" data-for="free_item"><label for="pf-qty">Số suất tặng</label><input id="pf-qty" inputmode="numeric" value="1" /></div>
+              <div class="field" data-for="buy_get"><label for="pf-buy">Mua (m)</label><input id="pf-buy" inputmode="numeric" /></div>
+              <div class="field" data-for="buy_get"><label for="pf-get">Tặng (n)</label><input id="pf-get" inputmode="numeric" value="1" /></div>
+              <div class="field"><label for="pf-from">Từ ngày</label><input id="pf-from" type="date" /></div>
+              <div class="field"><label for="pf-to">Đến ngày</label><input id="pf-to" type="date" /></div>
+              <div class="field"><label for="pf-ws">Giờ bắt đầu mỗi ngày</label><input id="pf-ws" type="time" /></div>
+              <div class="field"><label for="pf-we">Giờ kết thúc mỗi ngày</label><input id="pf-we" type="time" />
+                <small>Để trống nếu cả ngày. Giờ kết thúc nhỏ hơn giờ bắt đầu nghĩa là qua nửa đêm (07:00 đến 03:00 hôm sau).</small></div>
+            </div>
+            <div class="actions">
+              <button type="submit">Lưu</button>
+              <button type="button" class="secondary" data-close>Hủy</button>
+            </div>
+          </form>
+        </dialog>`,
+      );
+
+      const $ = (id) => document.getElementById(id);
+      const render = () => {
+        $('rows').innerHTML = promos
+          .map(
+            (p) => `<tr>
+              <th scope="row" class="code">${p.code}</th>
+              <td>${P.esc(p.name)}${p.description ? `<small class="muted"> · ${P.esc(p.description)}</small>` : ''}</td>
+              <td>${KINDS[p.kind]}</td>
+              <td>${P.esc(summary(p))}</td>
+              <td>${when(p)}</td>
+              <td><span class="chip ${p.retired ? 'chip-warning' : 'chip-ok'}">${p.retired ? 'Đã ngừng' : 'Đang dùng'}</span>
+                <button type="button" class="secondary row-action" aria-label="Sửa ${p.code}" data-edit="${p.code}">Sửa</button>
+                <button type="button" class="secondary row-action" aria-label="${p.retired ? 'Dùng lại' : 'Ngừng dùng'} ${p.code}" data-retire="${p.code}">${p.retired ? 'Dùng lại' : 'Ngừng dùng'}</button></td>
+            </tr>`,
+          )
+          .join('');
+      };
+      const items = (filter) => {
+        const un = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
+        const n = un(filter.trim());
+        return D.items.filter((i) => !n || un(i.name).includes(n));
+      };
+      const fillItems = (selected) => {
+        $('pf-item').innerHTML =
+          '<option value="">Chọn…</option>' +
+          items($('pf-filter').value)
+            .map((i) => `<option value="${i.code}"${i.code === selected ? ' selected' : ''}>${P.esc(`${i.name} (${i.code})`)}</option>`)
+            .join('');
+      };
+      const showKind = () =>
+        document.querySelectorAll('#pf [data-for]').forEach((f) => (f.hidden = !f.dataset.for.split(' ').includes($('pf-kind').value)));
+
+      let editing = null;
+      const open = (p) => {
+        editing = p;
+        $('pf-title').textContent = p ? `Sửa ${p.code}` : 'Thêm chương trình';
+        $('pf-code').value = p?.code ?? '';
+        $('pf-code').disabled = !!p;
+        $('pf-kind').disabled = !!p;
+        $('pf-name').value = p?.name ?? '';
+        $('pf-desc').value = p?.description ?? '';
+        $('pf-kind').value = p?.kind ?? 'bill_percent';
+        $('pf-pct').value = p?.percent ?? '';
+        $('pf-amount').value = p?.amount ?? '';
+        $('pf-group').value = p?.group ?? '';
+        $('pf-filter').value = '';
+        fillItems(p?.item);
+        $('pf-qty').value = p?.quantity ?? 1;
+        $('pf-from').value = p?.vf ?? '';
+        $('pf-to').value = p?.vt ?? '';
+        $('pf-ws').value = p?.ws ?? '';
+        $('pf-we').value = p?.we ?? '';
+        showKind();
+        $('dlg-promo').showModal();
+      };
+
+      render();
+      $('add').addEventListener('click', () => open(null));
+      $('pf-kind').addEventListener('change', showKind);
+      $('pf-filter').addEventListener('input', () => fillItems($('pf-item').value));
+      $('rows').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-edit],[data-retire]');
+        if (!b) return;
+        if (b.dataset.edit) return open(promos.find((p) => p.code === b.dataset.edit));
+        const p = promos.find((x) => x.code === b.dataset.retire);
+        p.retired = !p.retired;
+        render();
+      });
+      $('pf').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!$('pf-code').value.trim() || !$('pf-name').value.trim()) return;
+        if (editing) {
+          editing.name = $('pf-name').value.trim();
+          editing.description = $('pf-desc').value.trim();
+        } else {
+          const num = (id) => Number($(id).value.replace(/[^\d]/g, '')) || 0;
+          promos.unshift({
+            code: $('pf-code').value.trim().toUpperCase(),
+            name: $('pf-name').value.trim(),
+            description: $('pf-desc').value.trim(),
+            kind: $('pf-kind').value,
+            percent: num('pf-pct'),
+            amount: num('pf-amount'),
+            group: $('pf-group').value,
+            item: $('pf-item').value,
+            quantity: num('pf-qty'),
+            buy: num('pf-buy'),
+            get: num('pf-get'),
+            vf: $('pf-from').value || '…',
+            vt: $('pf-to').value || '…',
+            ws: $('pf-ws').value,
+            we: $('pf-we').value,
+            retired: false,
+          });
+        }
+        $('dlg-promo').close();
+        render();
+        P.toast('Đã lưu chương trình.');
+      });
+    </script>
+  </body>
+</html>

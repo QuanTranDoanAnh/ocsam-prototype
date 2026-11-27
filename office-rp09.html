@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Đối chiếu CukCuk (RP-09) · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/rp09: Rp09Screen (ReconcileScreens.tsx, FR-12.05, ADR-028): every paid bill of the day must carry a CukCuk
+      // invoice number. Built from P.D.bills and P.D.cukcukQueue (business day 27/11, still open, refreshed every 10 s).
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Đối chiếu CukCuk (RP-09)', nav: 'rp09' });
+      const D = P.D;
+      const at = (hhmm) => `${hhmm}:00 27/11/2026`;
+
+      const queue = Object.fromEntries(D.cukcukQueue.map((q) => [q.bill, q]));
+      const paid = D.bills.filter((b) => b.state === 'paid');
+      const entered = paid.filter((b) => queue[b.no]?.state === 'entered');
+      const paidTotal = paid.reduce((a, b) => a + b.total, 0);
+      const enteredTotal = entered.reduce((a, b) => a + b.total, 0);
+      const untransferred = paid.filter((b) => queue[b.no]?.state !== 'entered');
+      // HĐ-0027 was paid, then cancelled with a refund: the CukCuk invoice needs an adjustment (version 2 is the cancellation)
+      const edited = D.bills
+        .filter((b) => b.state === 'cancelled')
+        .map((b) => ({ no: b.no, version: 2, before: b.total, after: 0, adjust: 'Cần chỉnh' }));
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="rp09-title">
+          <h2 id="rp09-title">Đối chiếu CukCuk cuối ngày (RP-09)</h2>
+          <p class="muted">Mỗi hóa đơn đã thanh toán trong ngày phải có số hóa đơn CukCuk. Hóa đơn thanh toán sau giờ chốt tính vào ngày thanh toán.</p>
+          <div class="field"><label for="rp09-day">Ngày</label><input id="rp09-day" type="date" value="2026-11-27" /></div>
+          <dl class="summary-list" aria-label="Tổng hợp">
+            <div><dt>Đã thanh toán (nội bộ)</dt><dd>${paid.length} · <span class="money">${P.money(paidTotal)}</span></dd></div>
+            <div><dt>Đã vào CukCuk</dt><dd>${entered.length} · <span class="money">${P.money(enteredTotal)}</span></dd></div>
+            <div><dt>Chênh lệch (chưa vào CukCuk)</dt><dd><strong class="money">${P.money(paidTotal - enteredTotal)}</strong></dd></div>
+            <div><dt>Dữ liệu cập nhật đến</dt><dd>${D.health.sync.lastPush} 27/11/2026</dd></div>
+          </dl>
+          <p><button type="button" class="secondary" data-toast="Đã tải rp09-2026-11-27.xlsx">Tải Excel</button></p>
+
+          <h3>Chưa vào CukCuk (${untransferred.length})</h3>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Hóa đơn chưa vào CukCuk">
+            <table class="data">
+              <thead><tr><th scope="col">Hóa đơn</th><th scope="col">Bàn</th><th scope="col">Giờ thanh toán</th><th scope="col">Số tiền</th><th scope="col">Thu ngân</th></tr></thead>
+              <tbody>${untransferred
+                .map((b) => {
+                  const q = queue[b.no];
+                  return `<tr><th scope="row">${b.no}${q?.state === 'held' ? ' · đang giữ' : ''}</th><td>${b.table}</td>
+                    <td>${at(q?.paidAt ?? b.at)}</td><td>${P.money(b.total)}</td><td>${P.esc(b.cashier)}</td></tr>`;
+                })
+                .join('')}</tbody>
+            </table>
+          </div>
+
+          <h3>Sửa sau khi đã nhập CukCuk (${edited.length})</h3>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Hóa đơn sửa sau khi nhập CukCuk">
+            <table class="data">
+              <thead><tr><th scope="col">Hóa đơn</th><th scope="col">Trước</th><th scope="col">Sau</th><th scope="col">Chênh lệch</th><th scope="col">Trạng thái chỉnh</th></tr></thead>
+              <tbody>${edited
+                .map(
+                  (e) => `<tr><th scope="row">${e.no} · phiên bản ${e.version}</th><td>${P.money(e.before)}</td><td>${P.money(e.after)}</td>
+                    <td>${P.money(e.after - e.before)}</td><td>${e.adjust}</td></tr>`,
+                )
+                .join('')}</tbody>
+            </table>
+          </div>
+        </section>`,
+      );
+    </script>
+  </body>
+</html>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Nhóm món và ghi chú · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/groups: GroupsScreen.tsx (table, GroupForm subform) and NotesPanel.tsx for the chosen group.
+      // ?notes=<group id> or ?edit=<group id> opens a panel directly.
+      const main = P.frame({ surface: 'office', user: 'accountant', title: 'Nhóm món và ghi chú', nav: 'groups' });
+      const D = P.D;
+      /** Groups whose printed lines staff may cancel themselves (drinks); food is manager-only. */
+      const SELF_CANCEL = { bia: true, nuoc: true };
+      const groups = D.groups.map((g, i) => ({ ...g, order: i + 1, self: !!SELF_CANCEL[g.id], notes: [...g.notes] }));
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section class="panel" aria-labelledby="groups-title">
+          <h2 id="groups-title">Nhóm món và ghi chú</h2>
+          <p class="muted">Nhóm không bị xóa; chỉ đổi tên hoặc thứ tự.</p>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Bảng nhóm món">
+            <table class="data">
+              <thead><tr>
+                <th scope="col">Tên nhóm</th><th scope="col" class="num">Thứ tự</th>
+                <th scope="col">Tự hủy sau khi in</th><th scope="col">Thao tác</th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div id="edit-slot"></div>
+        </section>
+        <div id="notes-slot"></div>`,
+      );
+
+      const renderRows = () => {
+        document.getElementById('rows').innerHTML = groups
+          .map(
+            (g) => `<tr>
+              <th scope="row">${P.esc(g.name)}</th>
+              <td class="num">${g.order}</td>
+              <td>${g.self ? 'Được tự hủy' : 'Chỉ quản lý hủy'}</td>
+              <td><button type="button" class="secondary row-action" aria-label="Sửa nhóm ${P.esc(g.name)}" data-edit="${g.id}">Sửa</button>
+                <button type="button" class="secondary row-action" aria-label="Ghi chú của nhóm ${P.esc(g.name)}" data-notes="${g.id}">Ghi chú</button></td>
+            </tr>`,
+          )
+          .join('');
+      };
+
+      const edit = (id) => {
+        document.getElementById('notes-slot').innerHTML = '';
+        const g = groups.find((x) => x.id === id);
+        const slot = document.getElementById('edit-slot');
+        slot.innerHTML = `<form class="subform" aria-label="Sửa nhóm ${P.esc(g.name)}">
+          <div class="form-grid">
+            <div class="field"><label for="g-name">Tên nhóm</label><input id="g-name" required value="${P.esc(g.name)}" /></div>
+            <div class="field"><label for="g-order">Thứ tự hiển thị</label><input id="g-order" inputmode="numeric" value="${g.order}" /></div>
+          </div>
+          <div class="field"><label class="check" for="g-self"><input id="g-self" type="checkbox"${g.self ? ' checked' : ''} />Nhân viên được tự hủy món của nhóm này sau khi đã in</label>
+            <small>Ví dụ bia, nước, khăn lạnh, đậu phộng. Món ăn thì chỉ quản lý hủy.</small></div>
+          <div class="actions">
+            <button type="submit">Lưu</button>
+            <button type="button" class="secondary" id="g-cancel">Hủy</button>
+          </div>
+        </form>`;
+        slot.querySelector('form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          g.name = document.getElementById('g-name').value.trim() || g.name;
+          g.order = Number(document.getElementById('g-order').value) || g.order;
+          g.self = document.getElementById('g-self').checked;
+          slot.innerHTML = '';
+          renderRows();
+          P.toast('Đã lưu');
+        });
+        document.getElementById('g-cancel').addEventListener('click', () => (slot.innerHTML = ''));
+      };
+
+      const notes = (id) => {
+        document.getElementById('edit-slot').innerHTML = '';
+        const g = groups.find((x) => x.id === id);
+        const slot = document.getElementById('notes-slot');
+        const draw = () => {
+          slot.innerHTML = `<section class="panel" aria-labelledby="notes-g">
+            <h2 id="notes-g">Ghi chú của nhóm ${P.esc(g.name)}</h2>
+            <p class="muted">Phục vụ chọn một chạm khi gọi món; vẫn gõ thêm được.</p>
+            ${
+              g.notes.length
+                ? `<ul class="note-list" aria-label="Danh sách ghi chú">${g.notes
+                    .map(
+                      (n, i) =>
+                        `<li><span>${P.esc(n)}</span><button type="button" class="secondary row-action" aria-label="Xóa ghi chú ${P.esc(n)}" data-del="${i}">Xóa</button></li>`,
+                    )
+                    .join('')}</ul>`
+                : '<p class="muted">Chưa có ghi chú nào.</p>'
+            }
+            <form class="inline-add" aria-label="Thêm ghi chú">
+              <div class="field"><label for="n-text">Ghi chú mới</label><input id="n-text" maxlength="100" /></div>
+              <button type="submit" disabled>Thêm ghi chú</button>
+            </form>
+          </section>`;
+          const input = slot.querySelector('#n-text');
+          const add = slot.querySelector('button[type=submit]');
+          input.addEventListener('input', () => (add.disabled = input.value.trim() === ''));
+          slot.querySelector('form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            g.notes.push(input.value.trim());
+            draw();
+          });
+          slot.querySelectorAll('[data-del]').forEach((b) =>
+            b.addEventListener('click', () => (g.notes.splice(Number(b.dataset.del), 1), draw())),
+          );
+        };
+        draw();
+      };
+
+      renderRows();
+      document.getElementById('rows').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-edit],[data-notes]');
+        if (!b) return;
+        b.dataset.edit ? edit(b.dataset.edit) : notes(b.dataset.notes);
+      });
+      if (P.param('edit')) edit(P.param('edit'));
+      if (P.param('notes')) notes(P.param('notes'));
+    </script>
+  </body>
+</html>

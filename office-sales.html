@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Báo cáo bán hàng · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/sales: SalesReportsScreen (SalesReports.tsx, S18/S19a-c, ADR-029). ?report=rp07|rp01b|rp04|rp05|rp01a|invoices|promotions
+      // plus ?view=shift|day (rp07), ?mode=split|merged (rp01b), and the drill filters ?bill= ?table= ?area= ?item= ?day= (rp01a).
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Báo cáo bán hàng', nav: 'sales' });
+      const D = P.D;
+      const report = P.param('report', 'rp07');
+      const FROM = '2026-11-21';
+      const TO = '2026-11-27';
+      const self = (q) => `office-sales.html?${q}${as !== 'accountant' ? `&as=${as}` : ''}`;
+      const pct = (bp) => `${(bp / 100).toFixed(2).replace('.', ',')}%`;
+      const iso = (dm) => `2026-${dm.slice(3)}-${dm.slice(0, 2)}`;
+      const sum = (rows, k) => rows.reduce((a, r) => a + r[k], 0);
+      const link = (href, text, label) =>
+        `<button type="button" class="link-button" data-go="${href}"${label ? ` aria-label="${P.esc(label)}"` : ''}>${P.esc(text)}</button>`;
+
+      /** ReportTable (ControlReports.tsx): server columns [key, label, kind]; money and numbers align right. */
+      function reportTable(cols, rows, total, label, cell) {
+        const cls = (c) => (c[2] === 'money' || c[2] === 'number' ? ' class="num"' : '');
+        const val = (c, v, r) => (cell && cell(c, v, r)) ?? (v === '' || v == null ? '' : c[2] === 'money' ? P.money(v) : P.esc(v));
+        const [lead, ...rest] = cols;
+        return `<div class="table-scroll short" tabindex="0" role="region" aria-label="${label}">
+          <table class="data">
+            <thead><tr>${cols.map((c) => `<th scope="col"${cls(c)}>${c[1]}</th>`).join('')}</tr></thead>
+            <tbody>${rows
+              .map((r) => `<tr><th scope="row">${val(lead, r[lead[0]], r)}</th>${rest.map((c) => `<td${cls(c)}>${val(c, r[c[0]], r)}</td>`).join('')}</tr>`)
+              .join('')}</tbody>
+            ${
+              total
+                ? `<tfoot><tr><th scope="row">Cộng</th>${rest
+                    .map((c) => `<td${cls(c)}>${total[c[0]] === undefined ? '' : c[2] === 'money' ? P.money(total[c[0]]) : total[c[0]]}</td>`)
+                    .join('')}</tr></tfoot>`
+                : ''
+            }
+          </table>
+        </div>`;
+      }
+
+      // ---------- RP-07: by day and shift (salesByDay; shift split, VAT and receipts derived here) ----------
+      const lastWeek = [36210000, 45880000, 41950000, 30540000, 31020000, 34770000, 37900000];
+      const unpaidToday = D.bills.filter((b) => b.state === 'printed').reduce((a, b) => a + b.total, 0);
+      function figures(net, disc, bills, covers, unpaid, lw) {
+        const gross = net + disc;
+        const vat = Math.round((net * 85) / 1085);
+        const goods = Math.round((gross * 1000) / 1085);
+        const cash = Math.round((net * 0.43) / 1000) * 1000;
+        const transfer = Math.round((net * 0.49) / 1000) * 1000;
+        return {
+          bills, covers, gross, discount: disc, net, vat, preVat: net - vat,
+          cash, transfer, card: net - unpaid - cash - transfer,
+          goodsPreVat: goods, promoPreVat: goods - (net - vat), unpaid, lastWeek: lw,
+        };
+      }
+      const view = P.param('view', 'shift');
+      const rp07Rows = [];
+      D.salesByDay.forEach((d, i) => {
+        const day = iso(d.day);
+        const unpaid = d.partial ? unpaidToday : 0;
+        if (view === 'day') {
+          rp07Rows.push({ day, shift: 'Cả ngày', cashier: '', ...figures(d.revenue, d.discount, d.bills, d.guests, unpaid, lastWeek[i]) });
+          return;
+        }
+        // Ca tối (22:00–03:00) takes about a fifth of the day; the day still open (27/11) has no evening yet
+        const eNet = d.partial ? 0 : Math.round((d.revenue * 0.18) / 1000) * 1000;
+        const eDisc = d.partial ? 0 : Math.round((d.discount * 0.15) / 100) * 100;
+        const eBills = d.partial ? 0 : Math.round(d.bills * 0.2);
+        const eCov = d.partial ? 0 : Math.round(d.guests * 0.17);
+        const eLw = Math.round((lastWeek[i] * 0.18) / 1000) * 1000;
+        rp07Rows.push({ day, shift: 'Ca chiều', cashier: 'Võ Thị Hồng', ...figures(d.revenue - eNet, d.discount - eDisc, d.bills - eBills, d.guests - eCov, unpaid, lastWeek[i] - eLw) });
+        if (!d.partial) rp07Rows.push({ day, shift: 'Ca tối', cashier: '', ...figures(eNet, eDisc, eBills, eCov, 0, eLw) });
+      });
+      function rp07() {
+        const keys = ['bills', 'gross', 'discount', 'net', 'vat', 'preVat', 'covers', 'cash', 'transfer', 'card', 'goodsPreVat', 'promoPreVat', 'unpaid'];
+        const t = Object.fromEntries(keys.map((k) => [k, sum(rp07Rows, k)]));
+        const m = (v) => P.money(v);
+        return `<div class="table-scroll short" tabindex="0" role="region" aria-label="Tổng hợp theo ngày và ca">
+          <table class="data">
+            <thead><tr>
+              <th scope="col">Ngày</th><th scope="col">Ca</th><th scope="col">Thu ngân</th><th scope="col">Số hóa đơn</th>
+              <th scope="col">Doanh thu gộp</th><th scope="col">Giảm giá</th><th scope="col">Doanh thu thuần</th>
+              <th scope="col">VAT đã gồm</th><th scope="col">Trước VAT</th><th scope="col">Số khách</th>
+              <th scope="col">Tiền mặt</th><th scope="col">Chuyển khoản</th><th scope="col">Thẻ</th>
+              <th scope="col">Tiền hàng trước thuế</th><th scope="col">Khuyến mại trước thuế</th><th scope="col">Chưa trả</th>
+              <th scope="col">Cùng ca tuần trước</th>
+            </tr></thead>
+            <tbody>${rp07Rows
+              .map(
+                (r) => `<tr>
+                  <th scope="row">${link(self(`report=rp01a&day=${r.day}`), r.day)}</th>
+                  <td>${r.shift}</td><td>${P.esc(r.cashier)}</td><td>${r.bills}</td><td>${m(r.gross)}</td><td>${m(r.discount)}</td>
+                  <td>${m(r.net)}</td><td>${m(r.vat)}</td><td>${m(r.preVat)}</td><td>${r.covers}</td>
+                  <td>${m(r.cash)}</td><td>${m(r.transfer)}</td><td>${m(r.card)}</td>
+                  <td>${m(r.goodsPreVat)}</td><td>${m(r.promoPreVat)}</td><td>${m(r.unpaid)}</td><td>${m(r.lastWeek)}</td>
+                </tr>`,
+              )
+              .join('')}</tbody>
+            <tfoot><tr>
+              <th scope="row">Cộng</th><td></td><td></td><td>${t.bills}</td><td>${m(t.gross)}</td><td>${m(t.discount)}</td>
+              <td><strong>${m(t.net)}</strong></td><td>${m(t.vat)}</td><td>${m(t.preVat)}</td><td>${t.covers}</td>
+              <td>${m(t.cash)}</td><td>${m(t.transfer)}</td><td>${m(t.card)}</td>
+              <td>${m(t.goodsPreVat)}</td><td>${m(t.promoPreVat)}</td><td>${m(t.unpaid)}</td><td></td>
+            </tr></tfoot>
+          </table>
+        </div>`;
+      }
+
+      // ---------- RP-01b: by item; split = one row per real price (price versions and tiers), merged = average ----------
+      const mode = P.param('mode', 'split');
+      const soldLines = [
+        ['BT01', 'Giá thường', 25000, 1186, 420000],
+        ['BT01', 'Phòng lạnh', 28000, 214, 0],
+        ['OH01', 'Giá thường', 135000, 188, 1520000],
+        ['OH01', 'Phòng lạnh', 149000, 41, 298000],
+        ['GH01', 'Giá thường', 520000, 44.6, 0],
+        ['BH01', 'Giá thường', 30000, 520, 0],
+        ['BH01', 'Phòng lạnh', 33000, 166, 0],
+        ['SD01', 'Giá thường', 89000, 176, 712000],
+        ['LA01', 'Giá thường', 299000, 58, 1196000],
+        ['MU01', 'Giá thường', 145000, 97, 0],
+        ['OL01', 'Giá thường', 85000, 132, 0],
+        ['CU01', 'Giá thường', 620000, 21.8, 0],
+        ['CU01', 'Giá thường', 650000, 6.4, 0],
+        ['RM01', 'Giá thường', 45000, 140, 630000],
+        ['TD01', 'Giá thường', 5000, 610, 0],
+      ].map(([code, tier, price, qty, discount]) => {
+        const gross = Math.round(qty * price);
+        return { code, tier, price, qty, gross, discount, net: gross - discount };
+      });
+      function rp01b() {
+        let rows = soldLines;
+        if (mode === 'merged') {
+          const by = new Map();
+          for (const l of soldLines) {
+            const r = by.get(l.code) ?? { code: l.code, qty: 0, gross: 0, discount: 0, net: 0 };
+            r.qty = Math.round((r.qty + l.qty) * 10) / 10;
+            r.gross += l.gross;
+            r.discount += l.discount;
+            r.net += l.net;
+            by.set(l.code, r);
+          }
+          rows = [...by.values()];
+        }
+        const net = sum(rows, 'net');
+        return `<div class="table-scroll short" tabindex="0" role="region" aria-label="Bán theo món">
+          <table class="data">
+            <thead><tr><th scope="col">Món</th><th scope="col">Nhóm</th><th scope="col">${mode === 'split' ? 'Đơn giá' : 'Giá bình quân'}</th>
+              <th scope="col">Số lượng</th><th scope="col">Doanh thu gộp</th><th scope="col">Giảm giá</th><th scope="col">Doanh thu thuần</th><th scope="col">% doanh thu</th></tr></thead>
+            <tbody>${rows
+              .map((r) => {
+                const it = P.item(r.code);
+                const price =
+                  mode === 'split' ? `${P.money(r.price)} · ${r.tier}` : `${P.money(Math.round(r.gross / r.qty))} (tham khảo)`;
+                return `<tr><th scope="row">${link(self(`report=rp01a&item=${r.code}`), `${r.code} · ${it.name}`, `Xem chi tiết món ${it.name}${mode === 'split' ? ` giá ${P.num(r.price)}đ` : ''}`)}</th>
+                  <td>${P.esc(P.group(it.group).name)}</td><td>${price}</td><td>${P.qty(r.qty)}</td>
+                  <td>${P.money(r.gross)}</td><td>${P.money(r.discount)}</td><td>${P.money(r.net)}</td><td>${pct(Math.round((r.net * 10000) / net))}</td></tr>`;
+              })
+              .join('')}</tbody>
+            <tfoot><tr><th scope="row">Cộng</th><td></td><td></td><td>${P.qty(Math.round(sum(rows, 'qty') * 10) / 10)}</td>
+              <td>${P.money(sum(rows, 'gross'))}</td><td>${P.money(sum(rows, 'discount'))}</td><td><strong>${P.money(net)}</strong></td><td></td></tr></tfoot>
+          </table>
+        </div>`;
+      }
+
+      // ---------- RP-04 by area and RP-05 by table (the week: 392 table sessions, 1.367 guests) ----------
+      const areaRows = [
+        { id: 'san', sessions: 182, covers: 640, net: 108420000 },
+        { id: 'nha', sessions: 148, covers: 498, net: 86300000 },
+        { id: 'lanh', sessions: 62, covers: 229, net: 55600000 },
+      ];
+      function rp04() {
+        const t = { sessions: sum(areaRows, 'sessions'), covers: sum(areaRows, 'covers'), net: sum(areaRows, 'net') };
+        return `<div class="table-scroll short" tabindex="0" role="region" aria-label="Theo khu vực">
+          <table class="data">
+            <thead><tr><th scope="col">Khu vực</th><th scope="col">Lượt bàn</th><th scope="col">Số khách</th><th scope="col">Doanh thu thuần</th><th scope="col">Doanh thu / khách</th><th scope="col">Doanh thu / lượt</th></tr></thead>
+            <tbody>${areaRows
+              .map((r) => {
+                const a = P.area(r.id).name;
+                return `<tr><th scope="row">${link(self(`report=rp01a&area=${r.id}`), a, `Xem chi tiết khu ${a}`)}</th><td>${r.sessions}</td><td>${r.covers}</td>
+                  <td>${P.money(r.net)}</td><td>${P.money(Math.round(r.net / r.covers))}</td><td>${P.money(Math.round(r.net / r.sessions))}</td></tr>`;
+              })
+              .join('')}</tbody>
+            <tfoot><tr><th scope="row">Cộng</th><td>${t.sessions}</td><td>${t.covers}</td><td><strong>${P.money(t.net)}</strong></td>
+              <td>${P.money(Math.round(t.net / t.covers))}</td><td>${P.money(Math.round(t.net / t.sessions))}</td></tr></tfoot>
+          </table>
+        </div>`;
+      }
+      // each area's figures shared over its tables by seats; the last table takes the remainder
+      const tableRows = [];
+      for (const a of areaRows) {
+        const ts = D.tables.filter((t) => t.area === a.id);
+        const w = ts.reduce((x, t) => x + t.seats, 0);
+        let s = 0, c = 0, n = 0;
+        ts.forEach((t, i) => {
+          const last = i === ts.length - 1;
+          const r = {
+            table: t.id, area: P.area(a.id).name,
+            sessions: last ? a.sessions - s : Math.floor((a.sessions * t.seats) / w),
+            covers: last ? a.covers - c : Math.floor((a.covers * t.seats) / w),
+            net: last ? a.net - n : Math.round((a.net * t.seats) / w / 1000) * 1000,
+            dwell: 62 + t.seats * 7,
+          };
+          s += r.sessions; c += r.covers; n += r.net;
+          tableRows.push(r);
+        });
+      }
+      function rp05() {
+        return `<div class="table-scroll short" tabindex="0" role="region" aria-label="Theo bàn">
+          <table class="data">
+            <thead><tr><th scope="col">Bàn</th><th scope="col">Khu vực</th><th scope="col">Lượt bàn</th><th scope="col">Số khách</th><th scope="col">Doanh thu thuần</th><th scope="col">Thời gian ngồi TB</th></tr></thead>
+            <tbody>${tableRows
+              .map(
+                (r) => `<tr><th scope="row">${link(self(`report=rp01a&table=${r.table}`), r.table, `Xem chi tiết bàn ${r.table}`)}</th><td>${r.area}</td>
+                  <td>${r.sessions}</td><td>${r.covers}</td><td>${P.money(r.net)}</td><td>${r.dwell} phút</td></tr>`,
+              )
+              .join('')}</tbody>
+            <tfoot><tr><th scope="row">Cộng</th><td></td><td>${sum(tableRows, 'sessions')}</td><td>${sum(tableRows, 'covers')}</td>
+              <td><strong>${P.money(sum(tableRows, 'net'))}</strong></td><td></td></tr></tfoot>
+          </table>
+        </div>`;
+      }
+
+      // ---------- RP-01a: the sales journal (lines of today's paid bills; HĐ-0027 was cancelled and reversed) ----------
+      const L = (bill, table, at, orderer, code, qty, price, discount = 0, entry = 'sale') => ({
+        bill, table, area: P.table(table).area, at, orderer, code, qty, price, discount, entry, net: Math.round(qty * price) - discount,
+      });
+      const journal = [
+        L('HĐ-0024', 'T2', '18:04:12 27/11/2026', 'Đỗ Thị Lan', 'LA01', 1, 299000, 22738),
+        L('HĐ-0024', 'T2', '18:04:12 27/11/2026', 'Đỗ Thị Lan', 'NG01', 1, 69000, 5247),
+        L('HĐ-0024', 'T2', '18:04:12 27/11/2026', 'Đỗ Thị Lan', 'SL01', 2, 79000, 12015),
+        ...['OH01:135000', 'SD01:89000', 'NG01:69000', 'OG01:99000'].map((x) => L('HĐ-0027', 'S5', '19:16:40 27/11/2026', 'Nguyễn Văn Tùng', x.split(':')[0], 1, +x.split(':')[1])),
+        ...['OH01:135000', 'SD01:89000', 'NG01:69000', 'OG01:99000'].map((x) => L('HĐ-0027', 'S5', '19:16:40 27/11/2026', 'Nguyễn Văn Tùng', x.split(':')[0], -1, +x.split(':')[1], 0, 'reversal')),
+        ...['OH01:135000', 'SD01:89000', 'NG01:69000', 'OG01:99000'].map((x) => L('HĐ-0028', 'S5', '19:16:40 27/11/2026', 'Nguyễn Văn Tùng', x.split(':')[0], 1, +x.split(':')[1])),
+        L('HĐ-0030', 'L2', '20:21:05 27/11/2026', 'Hoàng Minh Khoa', 'LA01', 1, 329000),
+        L('HĐ-0030', 'L2', '20:21:05 27/11/2026', 'Hoàng Minh Khoa', 'GH01', 1, 570000),
+        L('HĐ-0030', 'L2', '20:21:05 27/11/2026', 'Hoàng Minh Khoa', 'BH01', 9, 33000),
+        L('HĐ-0030', 'L2', '20:21:05 27/11/2026', 'Hoàng Minh Khoa', 'SL01', 1, 87000),
+        L('HĐ-0030', 'L2', '20:58:31 27/11/2026', 'Hoàng Minh Khoa', 'OB01', 1, 98000),
+        L('HĐ-0030', 'L2', '20:58:31 27/11/2026', 'Hoàng Minh Khoa', 'BM01', 1, 5000),
+      ];
+      const f = { bill: P.param('bill'), table: P.param('table'), area: P.param('area'), item: P.param('item'), day: P.param('day') };
+      const filterLabel = f.bill ?? f.table ?? (f.area && P.area(f.area)?.name) ?? (f.item && P.item(f.item)?.name) ?? f.day;
+      function rp01a() {
+        const rows = journal.filter(
+          (r) =>
+            (!f.bill || r.bill === f.bill) && (!f.table || r.table === f.table) && (!f.area || r.area === f.area) &&
+            (!f.item || r.code === f.item) && (!f.day || f.day === '2026-11-27'),
+        );
+        return `<p class="muted">${rows.length} dòng.</p>
+          <div class="table-scroll short" tabindex="0" role="region" aria-label="Chi tiết bán hàng">
+            <table class="data">
+              <thead><tr><th scope="col">Hóa đơn</th><th scope="col">Bàn</th><th scope="col">Khu vực</th><th scope="col">Giờ gọi</th><th scope="col">Người gọi</th>
+                <th scope="col">Món</th><th scope="col">Số lượng</th><th scope="col">Đơn giá</th><th scope="col">Giảm giá</th><th scope="col">Doanh thu thuần</th></tr></thead>
+              <tbody>${rows
+                .map(
+                  (r) => `<tr><th scope="row">${r.bill}${r.entry === 'reversal' ? ' · hoàn' : ''}</th><td>${r.table}</td><td>${P.area(r.area).name}</td>
+                    <td>${r.at}</td><td>${P.esc(r.orderer)}</td><td>${r.code} · ${P.esc(P.item(r.code).name)}</td><td>${P.qty(r.qty)}</td>
+                    <td>${P.money(r.price)}</td><td>${P.money(r.discount)}</td><td>${P.money(r.net)}</td></tr>`,
+                )
+                .join('')}</tbody>
+              <tfoot><tr><th scope="row">Cộng</th><td colspan="5"></td><td>${P.qty(sum(rows, 'qty'))}</td><td></td>
+                <td>${P.money(sum(rows, 'discount'))}</td><td><strong>${P.money(sum(rows, 'net'))}</strong></td></tr></tfoot>
+            </table>
+          </div>`;
+      }
+
+      // ---------- Invoice listing (S19b): CukCuk's column order, a reversal as a negative row ----------
+      const INV_COLS = [
+        ['day', 'Ngày'], ['inOut', 'Giờ vào - ra'], ['billNo', 'Số hóa đơn', 'bill'], ['total', 'Doanh thu', 'money'],
+        ['goods', 'Tiền hàng trước thuế', 'money'], ['fee', 'Tiền phí', 'money'], ['vat', 'Tiền thuế GTGT', 'money'],
+        ['promo', 'Khuyến mại trước thuế', 'money'], ['delivery', 'Chiết khấu ĐTGH', 'money'], ['paid', 'Đã trả', 'money'],
+        ['unpaid', 'Chưa trả', 'money'], ['customer', 'Khách hàng'], ['covers', 'Số người', 'number'], ['service', 'Hình thức PV'],
+        ['area', 'Khu vực'], ['cash', 'Tiền mặt', 'money'], ['transfer', 'Chuyển khoản', 'money'], ['voucher', 'Voucher', 'money'],
+        ['debt', 'Khách nợ', 'money'], ['table', 'Bàn'], ['cashier', 'Thu ngân'], ['waiter', 'Phục vụ'], ['partner', 'Đối tác giao hàng'],
+        ['note', 'Ghi chú'], ['discount', 'Giảm giá (đã gồm VAT)', 'money'], ['version', 'Phiên bản', 'number'], ['kind', 'Loại dòng'],
+        ['other', 'Thanh toán khác', 'money'],
+      ];
+      const billExtra = {
+        'HĐ-0024': ['18:02 - 18:52', 3, 'Đỗ Thị Lan', 40000], 'HĐ-0025': ['18:11 - 19:05', 7, 'Nguyễn Văn Tùng', 50000],
+        'HĐ-0026': ['18:40 - 19:31', 5, 'Hoàng Minh Khoa', 0], 'HĐ-0027': ['19:12 - 19:58', 4, 'Nguyễn Văn Tùng', 0],
+        'HĐ-0028': ['19:12 - 20:01', 4, 'Nguyễn Văn Tùng', 0], 'HĐ-0029': ['18:30 - ', 4, 'Nguyễn Văn Tùng', 0],
+        'HĐ-0030': ['20:18 - 21:25', 6, 'Hoàng Minh Khoa', 0], 'HĐ-0031': ['18:10 - ', 10, 'Hoàng Minh Khoa', 124700],
+      };
+      const invRow = (b, sign, kind) => {
+        const [inOut, covers, waiter, disc] = billExtra[b.no];
+        const total = sign * b.total;
+        const vat = Math.round((total * 85) / 1085);
+        const goods = Math.round(((total + sign * disc) * 1000) / 1085);
+        const paid = b.state === 'printed' ? 0 : total;
+        return {
+          day: '27/11/2026', inOut, billNo: b.no, total, goods, fee: 0, vat, promo: goods - (total - vat), delivery: 0, paid,
+          unpaid: total - paid, customer: '', covers: sign * covers, service: 'Ngồi tại bàn', area: P.area(P.table(b.table).area).name,
+          cash: b.method === 'cash' ? paid : 0, transfer: b.method === 'transfer' ? paid : 0, voucher: 0, debt: 0, table: b.table,
+          cashier: b.cashier, waiter, partner: '', note: sign < 0 ? 'In nhầm bàn' : '', discount: sign * disc, version: 1, kind,
+          other: b.method === 'card' ? paid : 0,
+        };
+      };
+      const invRows = [];
+      D.bills.forEach((b) => {
+        invRows.push(invRow(b, 1, 'Bán'));
+        if (b.state === 'cancelled') invRows.push(invRow(b, -1, 'Hoàn'));
+      });
+      function invoices() {
+        const total = Object.fromEntries(INV_COLS.filter((c) => c[2] === 'money' || c[2] === 'number').map((c) => [c[0], 0]));
+        invRows.forEach((r) => Object.keys(total).forEach((k) => (total[k] += r[k])));
+        delete total.version;
+        for (const k of Object.keys(total)) if (INV_COLS.find((c) => c[0] === k)[2] === 'number') total[k] = String(total[k]);
+        return `<div class="form-grid">
+            <div class="field"><label for="inv-cashier">Thu ngân</label><input id="inv-cashier" /></div>
+            <div class="field"><label for="inv-waiter">Phục vụ</label><input id="inv-waiter" /></div>
+            <div class="field"><label for="inv-service">Hình thức PV</label>
+              <select id="inv-service"><option value="">Tất cả</option><option value="dine_in">Ngồi tại bàn</option><option value="takeaway">Mang về</option></select></div>
+          </div>
+          <p class="muted" role="status">Tổng số hóa đơn: ${D.bills.length} (${invRows.length} dòng, kể cả dòng hoàn).</p>
+          ${reportTable(INV_COLS, invRows, total, 'Bảng kê hóa đơn', (c, v) =>
+            c[2] === 'bill' ? link(self(`report=rp01a&bill=${v}`), v) : c[2] === 'money' ? P.money(v) : undefined,
+          )}`;
+      }
+
+      // ---------- Revenue by promotion programme (S19c) ----------
+      const PROMO_COLS = [
+        ['stt', 'STT', 'number'], ['name', 'Tên CTKM'], ['guests', 'SL Khách', 'number'], ['qty', 'SL bán', 'number'],
+        ['before', 'Doanh thu trước KM', 'money'], ['promo', 'Khuyến mại', 'money'], ['after', 'Doanh thu sau KM', 'money'],
+        ['bills', 'SL hóa đơn áp dụng KM', 'number'], ['billRev', 'Doanh thu hóa đơn áp dụng KM', 'money'], ['code', 'Mã CTKM'],
+        ['kind', 'Loại CTKM'], ['free', 'SL món mời', 'number'],
+      ];
+      const promoFig = {
+        SINHNHAT10: [38, 212, 11930000, 1193000, 4, 10737000, 0],
+        HAPPYBIA: [96, 640, 16000000, 2400000, 27, 19840000, 0],
+        RAUFREE: [84, 14, 630000, 630000, 14, 9870000, 14],
+        KHACHQUEN50: [61, 148, 7420000, 900000, 18, 6520000, 0],
+      };
+      const promoRows = D.promotions
+        .filter((p) => promoFig[p.code])
+        .map((p, i) => {
+          const [guests, qty, before, promo, bills, billRev, free] = promoFig[p.code];
+          return { stt: i + 1, name: p.name, guests, qty, before, promo, after: before - promo, bills, billRev, code: p.code, kind: p.kind, free };
+        });
+      function promotions() {
+        const t = {};
+        ['guests', 'qty', 'before', 'promo', 'after', 'bills', 'billRev', 'free'].forEach((k) => (t[k] = sum(promoRows, k)));
+        return reportTable(PROMO_COLS, promoRows, t, 'Doanh thu theo CTKM', (c, v, r) =>
+          c[0] === 'name' ? link(`office-control.html?tab=rp03&programme=${r.code}`, v) : undefined,
+        );
+      }
+
+      // ---------- the screen ----------
+      const TABS = [
+        ['rp07', 'Tổng hợp theo ngày và ca'],
+        ['rp01b', 'Bán theo món'],
+        ['rp04', 'Theo khu vực'],
+        ['rp05', 'Theo bàn'],
+        ['rp01a', 'Chi tiết bán hàng'],
+        ['invoices', 'Bảng kê hóa đơn'],
+        ['promotions', 'Doanh thu theo CTKM'],
+      ];
+      const radio = (name, checked, href, text) =>
+        `<label class="check"><input type="radio" name="${name}"${checked ? ' checked' : ''} data-go="${href}" /><span>${text}</span></label>`;
+      const body = { rp07, rp01b, rp04, rp05, rp01a, invoices, promotions }[report]();
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="sales-title">
+          <h2 id="sales-title">Báo cáo bán hàng</h2>
+          <div class="form-grid">
+            <div class="field"><label for="sales-from">Từ ngày</label><input id="sales-from" type="date" value="${FROM}" /></div>
+            <div class="field"><label for="sales-to">Đến ngày</label><input id="sales-to" type="date" value="${TO}" /></div>
+          </div>
+          <div class="actions" role="group" aria-label="Báo cáo bán hàng">
+            ${TABS.map(([id, label]) => `<button type="button"${id === report ? '' : ' class="secondary"'} aria-pressed="${id === report}" data-go="${self(`report=${id}`)}">${label}</button>`).join('')}
+          </div>
+          ${
+            report === 'rp07'
+              ? `<div role="group" aria-label="Cách xem" class="actions">
+                  ${radio('rp07-view', view === 'shift', self('report=rp07&view=shift'), 'Theo ca')}
+                  ${radio('rp07-view', view === 'day', self('report=rp07&view=day'), 'Cả ngày')}
+                </div>`
+              : ''
+          }
+          ${
+            report === 'rp01b'
+              ? `<div class="form-grid">
+                  <div class="field"><label for="sales-type">Loại mặt hàng</label>
+                    <select id="sales-type"><option value="">Tất cả</option><option>Món ăn</option><option>Đồ uống</option><option>Combo</option><option>Khác</option></select></div>
+                  <div class="field"><label for="sales-group">Nhóm thực đơn</label><input id="sales-group" /></div>
+                </div>
+                <div role="group" aria-label="Cách tính giá" class="actions">
+                  ${radio('price-mode', mode === 'split', self('report=rp01b&mode=split'), 'Tách giá <small class="muted">mỗi mức giá thực tế một dòng</small>')}
+                  ${radio('price-mode', mode === 'merged', self('report=rp01b&mode=merged'), 'Gộp giá <small class="muted">mỗi món một dòng, giá bình quân chỉ để tham khảo</small>')}
+                </div>`
+              : ''
+          }
+          ${
+            report === 'rp01a' && filterLabel
+              ? `<p class="status status-warning">Đang lọc: ${P.esc(filterLabel)}. <button type="button" class="secondary" data-go="${self('report=rp01a')}">Bỏ lọc</button></p>`
+              : ''
+          }
+          <p><button type="button" class="secondary" data-toast="Đã tải ${report}-${FROM}-${TO}.xlsx">Tải Excel</button></p>
+          ${body}
+        </section>`,
+      );
+    </script>
+  </body>
+</html>

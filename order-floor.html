@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Sơ đồ bàn · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /order: the waiter's floor plan (FloorScreen.tsx). ?as=manager shows the manager's extra links.
+      const as = P.param('as', 'waiter');
+      const main = P.frame({ surface: 'order', user: as, title: 'Gọi món' });
+      const areaId = P.param('area', 'san');
+      const D = P.D;
+
+      const counter = (label, tables) => {
+        const free = tables.filter((t) => t.state === 'empty');
+        const seats = tables.reduce((a, t) => a + t.seats, 0);
+        const freeSeats = free.reduce((a, t) => a + t.seats, 0);
+        return `${label}: ${free.length}/${tables.length} bàn trống, ${freeSeats}/${seats} chỗ trống`;
+      };
+      const tile = (t) => {
+        const s = P.session(t.id);
+        const extra = s ? `${s.guests} khách, ${P.money(P.sessionTotal(s))}` : '';
+        const href = t.state === 'empty' ? `order-open.html?table=${t.id}&as=${as}` : `order-table.html?table=${t.id}&as=${as}`;
+        const unsent = s ? s.lines.filter((l) => l.state === 'queued').length : 0;
+        return `<li><a class="table-tile table-${t.state}" href="${href}">
+          <span class="table-code"><span class="sr-only">Bàn </span>${t.id}</span>
+          <span class="table-state">${P.TABLE_STATE[t.state]}</span>
+          ${extra ? `<span class="table-extra">${extra}</span>` : ''}
+          ${unsent ? `<span class="chip chip-warning tile-unsent">${unsent} chưa gửi</span>` : ''}
+        </a></li>`;
+      };
+      const area = P.area(areaId);
+      const tables = D.tables.filter((t) => t.area === area.id);
+      const waiting = D.approvals.filter((a) => a.state === 'waiting').length;
+      const link = (href, text) => `<nav aria-label="${text}"><a href="${href}" class="link-button">${text}</a></nav>`;
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<section aria-labelledby="floor-title">
+          <h2 id="floor-title">Sơ đồ bàn</h2>
+          <div role="group" aria-label="Khu vực" class="tabs">
+            ${D.areas
+              .map(
+                (a) =>
+                  `<button type="button" class="chip-button" aria-pressed="${a.id === area.id}" data-go="order-floor.html?area=${a.id}&as=${as}">${a.name}</button>`,
+              )
+              .join('')}
+          </div>
+          <p role="status" class="muted floor-counter">${counter('Cả cơ sở', D.tables)}<br />${counter(area.name, tables)}</p>
+          <ul class="tables" aria-label="Bàn ở ${area.name}">${tables.map(tile).join('')}</ul>
+        </section>
+        ${link(`order-history.html?as=${as}`, 'Lịch sử gửi bếp')}
+        ${
+          as === 'manager'
+            ? link('order-approvals.html?as=manager', waiting ? `Duyệt hủy món (${waiting} đang chờ)` : 'Duyệt hủy món') +
+              link('order-availability.html?as=manager', 'Món hết hôm nay') +
+              link('order-health.html?as=manager', 'Tình trạng máy chủ và máy in') +
+              link('order-staff.html?as=manager', 'Nhân viên')
+            : ''
+        }`,
+      );
+    </script>
+  </body>
+</html>

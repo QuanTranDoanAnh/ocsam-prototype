@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Nhân viên · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/accounts: AccountsScreen.tsx (S02, ADR-013, FR-09.04/05). The list; ?create=1 the create form; ?user=<n> one
+      // account's panel (profile, password, premises, per-user grants, lock and leave). ?as=owner|accountant.
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Nhân viên', nav: 'accounts' });
+      const D = P.D;
+      const me = D.users[as];
+      const q = (s) => `office-accounts.html?${s}${as !== 'accountant' ? `&as=${as}` : ''}`;
+
+      const ROLE_NAMES = {
+        owner: 'Chủ cửa hàng', accountant: 'Kế toán (Admin)', manager: 'Quản lý', cashier: 'Thu ngân', waiter: 'Phục vụ', cukcuk_entry: 'Nhập CukCuk',
+      };
+      const GRANTS = {
+        'approval.cancel_printed': 'Duyệt hủy món đã in',
+        'order.cancel_printed_food': 'Hủy món đồ ăn đã in',
+        'session.cancel_with_items': 'Hủy phiên bàn đã có món',
+        'table.merge': 'Gộp bàn',
+      };
+      // per-user grants (inline): the senior waiter may merge tables; the cashier may cancel printed food
+      const grantsOf = { '0900 000 006': ['table.merge'], '0900 000 008': ['order.cancel_printed_food'] };
+      const accounts = D.staff.map((s, n) => ({
+        n, name: s.name, phone: s.phone.replace(/ /g, ''), role: s.role, premises: [D.premise.name],
+        inactive: s.state === 'Đã nghỉ việc', lockedAtPremise: s.state === 'Khóa tại cơ sở', lockedAtCentre: false,
+        grants: grantsOf[s.phone] ?? [], self: s.name === me.name,
+      }));
+
+      const chips = (a) =>
+        (a.inactive
+          ? '<span class="chip chip-warning">Đã nghỉ</span>'
+          : !a.lockedAtCentre && !a.lockedAtPremise
+            ? '<span class="chip chip-ok">Đang làm</span>'
+            : '') +
+        (a.lockedAtCentre ? '<span class="chip chip-warning">Bị khóa (trung tâm)</span>' : '') +
+        (a.lockedAtPremise ? '<span class="chip chip-warning">Bị khóa (tại cơ sở)</span>' : '');
+      const roleOptions = (selected) =>
+        Object.entries(ROLE_NAMES)
+          .filter(([r]) => r !== 'owner' || as === 'owner')
+          .map(([r, n]) => `<option value="${r}"${r === selected ? ' selected' : ''}>${n}</option>`)
+          .join('');
+      const premiseChecks = (legend, checked, disabled) =>
+        `<fieldset class="checks group"${disabled ? ' disabled' : ''}><legend>${legend}</legend>
+          <label class="check"><input type="checkbox"${checked ? ' checked' : ''} />${P.esc(D.premise.name)}</label></fieldset>`;
+
+      function listView() {
+        return `<div class="toolbar"><div class="actions"><button type="button" data-go="${q('create=1')}">Thêm nhân viên</button></div></div>
+          <p class="count" role="status">${accounts.length} tài khoản</p>
+          <div class="table-scroll" tabindex="0" role="region" aria-label="Bảng tài khoản">
+            <table class="data">
+              <thead><tr><th scope="col">Họ tên</th><th scope="col">Số điện thoại</th><th scope="col">Vai trò</th><th scope="col">Cơ sở</th><th scope="col">Trạng thái</th><th scope="col">Thao tác</th></tr></thead>
+              <tbody>${accounts
+                .map(
+                  (a) => `<tr${a.inactive || a.lockedAtCentre ? ' class="row-attention"' : ''}>
+                    <th scope="row">${P.esc(a.name)}</th><td>${a.phone}</td><td>${ROLE_NAMES[a.role]}</td>
+                    <td>${a.premises.map(P.esc).join(', ')}</td><td>${chips(a)}</td>
+                    <td><button type="button" class="secondary row-action" aria-label="Quản lý ${P.esc(a.name)}" data-go="${q(`user=${a.n}`)}">Quản lý</button></td>
+                  </tr>`,
+                )
+                .join('')}</tbody>
+            </table>
+          </div>`;
+      }
+
+      function createView() {
+        return `<form class="panel" aria-labelledby="create-title" id="create-form">
+          <h2 id="create-title">Thêm nhân viên</h2>
+          <div class="form-grid">
+            <div class="field"><label for="acc-name">Họ tên</label><input id="acc-name" required /></div>
+            <div class="field"><label for="acc-phone">Số điện thoại</label><input id="acc-phone" inputmode="numeric" autocomplete="off" required aria-describedby="acc-phone-hint" />
+              <small id="acc-phone-hint">9 đến 15 chữ số, không dấu cách.</small></div>
+            <div class="field"><label for="acc-role">Vai trò</label><select id="acc-role">${roleOptions('waiter')}</select></div>
+            <div class="field"><label for="acc-password">Mật khẩu</label><input id="acc-password" type="password" autocomplete="new-password" required aria-describedby="acc-password-hint" />
+              <small id="acc-password-hint">Tối thiểu 8 ký tự.</small></div>
+          </div>
+          ${premiseChecks('Cơ sở được làm việc', true, false)}
+          <div class="actions">
+            <button type="submit">Tạo tài khoản</button>
+            <button type="button" class="secondary" data-go="${q('')}">Hủy</button>
+          </div>
+        </form>`;
+      }
+
+      function detailView(a) {
+        const ownerLocked = a.role === 'owner' && as !== 'owner';
+        const frozen = a.self || ownerLocked ? ' disabled' : '';
+        return `<section class="panel" aria-labelledby="detail-title">
+          <h2 id="detail-title">Quản lý ${P.esc(a.name)}</h2>
+          <p>${chips(a)} ${ROLE_NAMES[a.role]} · ${a.phone}</p>
+          ${a.self ? '<p class="muted">Không tự thay đổi tài khoản của chính mình.</p>' : ''}
+          ${ownerLocked ? '<p class="muted">Chỉ chủ cửa hàng thay đổi được tài khoản chủ.</p>' : ''}
+          <div role="status" aria-live="polite" id="notice"></div>
+          <div id="problem"></div>
+
+          <fieldset class="group"${frozen}>
+            <legend>Thông tin</legend>
+            <div class="form-grid">
+              <div class="field"><label for="d-name">Họ tên</label><input id="d-name" value="${P.esc(a.name)}" /></div>
+              <div class="field"><label for="d-role">Vai trò</label><select id="d-role">${ownerLocked ? `<option>${ROLE_NAMES.owner}</option>` : roleOptions(a.role)}</select></div>
+            </div>
+            <div class="actions"><button type="button" data-saved>Lưu</button></div>
+          </fieldset>
+
+          <fieldset class="group"${frozen}>
+            <legend>Đặt lại mật khẩu</legend>
+            <div class="field"><label for="d-password">Đặt mật khẩu</label>
+              <input id="d-password" type="password" autocomplete="new-password" aria-describedby="d-password-hint" />
+              <small id="d-password-hint">Đặt lại sẽ đăng xuất người này khỏi mọi máy.</small></div>
+            <div class="actions"><button type="button" data-saved>Đặt mật khẩu</button></div>
+          </fieldset>
+
+          ${premiseChecks('Cơ sở', a.premises.length > 0, ownerLocked)}
+          <div class="actions"><button type="button" data-saved${ownerLocked ? ' disabled' : ''}>Lưu</button></div>
+
+          <fieldset class="group"${frozen}>
+            <legend>Quyền kiểm soát đơn</legend>
+            <p class="muted">Quyền thêm cho riêng người này, ngoài quyền của vai trò.</p>
+            ${Object.entries(GRANTS)
+              .map(([k, n]) => `<label class="check"><input type="checkbox"${a.grants.includes(k) ? ' checked' : ''} />${n}</label>`)
+              .join('')}
+            <div class="actions"><button type="button" data-saved>Lưu</button></div>
+          </fieldset>
+
+          <fieldset class="group"${frozen}>
+            <legend>Khóa tài khoản</legend>
+            <div class="field"><label for="d-reason">Lý do</label><input id="d-reason" aria-describedby="d-reason-hint" />
+              <small id="d-reason-hint">Bắt buộc, được ghi vào nhật ký.</small></div>
+            <div class="actions">
+              ${a.lockedAtCentre ? '<button type="button" class="secondary" data-saved>Mở khóa tài khoản</button>' : '<button type="button" class="secondary" data-reason>Khóa tài khoản</button>'}
+              ${a.inactive ? '<button type="button" class="secondary" data-saved>Cho làm lại</button>' : '<button type="button" class="secondary" data-reason>Cho nghỉ việc</button>'}
+            </div>
+          </fieldset>
+
+          <div class="actions"><button type="button" class="secondary" data-go="${q('')}">Đóng</button></div>
+        </section>`;
+      }
+
+      const userN = P.param('user');
+      const chosen = userN !== null ? accounts[+userN] : null;
+      main.insertAdjacentHTML('beforeend', chosen ? detailView(chosen) : P.param('create') ? createView() : listView());
+
+      // writes: say "Đã lưu" (or why not) as the panel does
+      const say = (ok) => {
+        document.getElementById('notice').innerHTML = ok ? '<p class="saved">Đã lưu</p>' : '';
+        document.getElementById('problem').innerHTML = ok
+          ? ''
+          : '<div role="alert" class="status status-danger"><strong>Chưa nhập lý do.</strong>Ghi ngắn gọn vì sao rồi bấm lại.</div>';
+        if (ok) P.toast('Đã lưu');
+      };
+      main.addEventListener('click', (e) => {
+        if (e.target.closest('[data-saved]')) say(true);
+        if (e.target.closest('[data-reason]')) say(document.getElementById('d-reason').value.trim() !== '');
+      });
+      document.getElementById('create-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        P.toast('Đã tạo tài khoản');
+        setTimeout(() => (location.href = q('')), 700);
+      });
+    </script>
+  </body>
+</html>

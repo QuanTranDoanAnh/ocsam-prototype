@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Nhập thực đơn từ Excel · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/import: ImportWizard.tsx (Steps, Summary, CellTable). One page per step: ?step=1|2|3.
+      // The report below is invented: December's menu exported from CukCuk: seven price changes, no new item.
+      const main = P.frame({
+        surface: 'office',
+        user: 'accountant',
+        title: 'Nhập thực đơn từ Excel',
+        nav: 'import',
+        crumbs: [
+          { label: 'Văn phòng', href: 'office-catalogue.html' },
+          { label: 'Danh mục món', href: 'office-catalogue.html' },
+          { label: 'Nhập thực đơn từ Excel' },
+        ],
+      });
+      const D = P.D;
+      const step = Math.min(3, Math.max(1, Number(P.param('step', '1')) || 1));
+      const report = { rows: 28, created: 0, updated: 7, unchanged: 21, groupsCreated: 0, priceVersionsWritten: 7 };
+      const warnings = [
+        [1, '', 'Các cột này không được đọc: Ảnh món, Mô tả.'],
+        [1, '', 'Một số món có giá theo khu vực trong CukCuk; chỉ nhập giá chuẩn.'],
+        [15, 'Price: AC', 'Món CU01 thiếu giá: AC.'],
+      ];
+      const after = 'Sau khi nhập: 0 món chưa có trạm in, 1 món thiếu giá.';
+
+      const STEPS = ['Chọn tệp', 'Kiểm tra', 'Áp dụng'];
+      const steps = `<ol class="steps" aria-label="Các bước nhập">${STEPS.map((label, i) => {
+        const n = i + 1;
+        const s = n < step ? 'done' : n === step ? 'current' : 'todo';
+        return `<li class="step step-${s}"${s === 'current' ? ' aria-current="step"' : ''}><span class="step-no">${n}</span>
+          <span>${label}<small>${s === 'done' ? 'Xong' : s === 'current' ? 'Đang làm' : 'Chờ'}</small></span></li>`;
+      }).join('')}</ol>`;
+      const summary = `<dl class="summary">${[
+        ['Dòng trong tệp', report.rows],
+        ['Món mới', report.created],
+        ['Món cập nhật', report.updated],
+        ['Không đổi', report.unchanged],
+        ['Nhóm mới', report.groupsCreated],
+        ['Phiên bản giá mới', report.priceVersionsWritten],
+      ]
+        .map(([l, v]) => `<div><dt>${l}</dt><dd class="money">${v}</dd></div>`)
+        .join('')}</dl>`;
+      const cells = (caption, list) => `<div class="table-scroll" tabindex="0" role="region" aria-label="${caption}">
+        <table class="data"><caption class="sr-only">${caption}</caption>
+          <thead><tr><th scope="col" class="num">Dòng</th><th scope="col">Cột</th><th scope="col">Nội dung</th></tr></thead>
+          <tbody>${list.map(([r, c, m]) => `<tr><td class="num">${r}</td><td>${P.esc(c)}</td><td>${P.esc(m)}</td></tr>`).join('')}</tbody>
+        </table></div>`;
+
+      const bodies = {
+        1: `<section aria-labelledby="step1">
+            <h2 id="step1">Chọn tệp</h2>
+            <div class="field">
+              <label for="menu-file">Chọn tệp Excel (.xlsx)</label>
+              <input id="menu-file" type="file" accept=".xlsx,.xls" aria-describedby="menu-file-hint" />
+              <small id="menu-file-hint">Cột bắt buộc: Item code, Name, Unit, Item type, VAT. Có thể thêm Group, Selling state, Station và một cột Price: &lt;mã bảng giá&gt; cho mỗi bảng giá. Ô trống giữ nguyên giá trị cũ.</small>
+            </div>
+            <p id="file-name">Chưa chọn tệp.</p>
+            <div class="actions">
+              <button type="button" data-go="office-import.html?step=2">Kiểm tra tệp</button>
+              <button type="button" class="secondary" data-toast="Đã tải bảng giá (Excel): bang-gia-ocsam-main.xlsx">Tải bảng giá hiện tại để làm mẫu</button>
+            </div>
+          </section>`,
+        2: `<section aria-labelledby="step2">
+            <h2 id="step2">Kiểm tra</h2>
+            ${summary}
+            <div class="status status-warning"><strong>${warnings.length} cảnh báo (vẫn nhập được).</strong>${after}</div>
+            ${cells('Danh sách cảnh báo', warnings)}
+            <div class="status status-ok"><strong>Tệp hợp lệ, chưa nhập.</strong>Bấm Áp dụng để ghi vào danh mục. Giá cũ vẫn được giữ trong lịch sử.</div>
+            <div class="actions">
+              <button type="button" data-go="office-import.html?step=3">Áp dụng</button>
+              <button type="button" class="secondary" data-go="office-import.html?step=1">Chọn tệp khác</button>
+            </div>
+          </section>`,
+        3: `<section aria-labelledby="step3">
+            <h2 id="step3">Áp dụng</h2>
+            <div role="status" class="status status-ok"><strong>Đã nhập xong.</strong>Cơ sở sẽ nhận danh mục mới trong ít giây.</div>
+            ${summary}
+            <div class="status status-warning">${after}</div>
+            <div class="actions">
+              <button type="button" data-go="office-catalogue.html?attention=1">Xem món cần xử lý</button>
+            </div>
+          </section>`,
+      };
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        ${steps}${bodies[step]}`,
+      );
+      if (step === 1)
+        document.getElementById('menu-file').addEventListener('change', (e) => {
+          const f = e.target.files[0];
+          document.getElementById('file-name').textContent = f ? f.name : 'Chưa chọn tệp.';
+        });
+    </script>
+  </body>
+</html>

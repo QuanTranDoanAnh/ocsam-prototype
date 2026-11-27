@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Ca làm việc · iOcOrder (prototype)</title>
+    <link rel="stylesheet" href="assets/app.css" />
+    <link rel="stylesheet" href="assets/proto.css" />
+  </head>
+  <body>
+    <script src="assets/data.js"></script>
+    <script src="assets/proto.js"></script>
+    <script>
+      // /office/shifts: ShiftsScreen (SalesReports.tsx, FR-11.08, ADR-029 d.4): the premise's shift windows, which RP-07
+      // "Theo ca" (office-sales.html) splits revenue by. ?as=manager|owner|accountant (all may edit: layout.manage).
+      const as = P.param('as', 'accountant');
+      const main = P.frame({ surface: 'office', user: as, title: 'Ca làm việc', nav: 'shifts' });
+      const D = P.D;
+      let list = D.shifts.map((s) => ({ name: s.name, start: s.from, end: s.to }));
+
+      main.insertAdjacentHTML(
+        'beforeend',
+        `<div class="field premise"><label for="premise">Cơ sở</label><output id="premise">${P.esc(D.premise.name)}</output></div>
+        <section aria-labelledby="shifts-title">
+          <h2 id="shifts-title">Ca làm việc</h2>
+          <p class="muted">Báo cáo chia doanh thu theo ca theo giờ thanh toán. Một ca có thể qua nửa đêm (07:00 đến 03:00). Chưa khai báo ca thì cả ngày là một ca. Doanh thu đã ghi giữ tên ca lúc ghi.</p>
+          <form aria-label="Ca làm việc" id="shifts-form">
+            <div id="windows"></div>
+            <div class="actions">
+              <button type="button" class="secondary" id="add">Thêm ca</button>
+              <button type="submit">Lưu các ca</button>
+            </div>
+            <p role="status" id="saved" hidden>Đã lưu các ca.</p>
+          </form>
+        </section>`,
+      );
+
+      const box = document.getElementById('windows');
+      function draw() {
+        box.innerHTML =
+          (list.length === 0 ? '<p class="muted">Chưa có ca nào: cả ngày kinh doanh là một ca.</p>' : '') +
+          list
+            .map(
+              (w, i) => `<fieldset class="reasons">
+                <legend>Ca ${i + 1}</legend>
+                <div class="field"><label for="shift-name-${i}">Tên ca</label><input id="shift-name-${i}" value="${P.esc(w.name)}" data-i="${i}" data-k="name" /></div>
+                <div class="field"><label for="shift-start-${i}">Bắt đầu</label><input id="shift-start-${i}" type="time" value="${w.start}" data-i="${i}" data-k="start" /></div>
+                <div class="field"><label for="shift-end-${i}">Kết thúc</label><input id="shift-end-${i}" type="time" value="${w.end}" data-i="${i}" data-k="end" /></div>
+                <button type="button" class="secondary" data-remove="${i}" aria-label="Xóa ca ${P.esc(w.name || String(i + 1))}">Xóa ca</button>
+              </fieldset>`,
+            )
+            .join('');
+        document.getElementById('add').disabled = list.length >= 8;
+        document.getElementById('saved').hidden = true;
+      }
+      draw();
+      box.addEventListener('input', (e) => {
+        const el = e.target;
+        if (el.dataset.k) list[+el.dataset.i][el.dataset.k] = el.value;
+        document.getElementById('saved').hidden = true;
+      });
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-remove]');
+        if (!b) return;
+        list = list.filter((_, k) => k !== +b.dataset.remove);
+        draw();
+      });
+      document.getElementById('add').addEventListener('click', () => {
+        list.push({ name: '', start: '07:00', end: '15:00' });
+        draw();
+      });
+      document.getElementById('shifts-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (list.some((w) => w.name.trim() === '')) return P.toast('Chưa lưu được. Tên ca không trùng nhau và giờ đúng dạng HH:MM.');
+        document.getElementById('saved').hidden = false;
+        P.toast('Đã lưu các ca.');
+      });
+    </script>
+  </body>
+</html>

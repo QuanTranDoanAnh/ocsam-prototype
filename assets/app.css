@@ -1,0 +1,1401 @@
+/* Be Vietnam Pro (SIL Open Font License, assets/fonts/LICENSE-OFL.txt), local copies so the prototype works offline. */
+/* be-vietnam-pro-latin-400-normal */
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(fonts/be-vietnam-pro-latin-400-normal.woff2) format('woff2');
+}/* be-vietnam-pro-latin-500-normal */
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url(fonts/be-vietnam-pro-latin-500-normal.woff2) format('woff2');
+}/* be-vietnam-pro-latin-600-normal */
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url(fonts/be-vietnam-pro-latin-600-normal.woff2) format('woff2');
+}/* be-vietnam-pro-vietnamese-400-normal */
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(fonts/be-vietnam-pro-vietnamese-400-normal.woff2) format('woff2');
+}/* be-vietnam-pro-vietnamese-500-normal */
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url(fonts/be-vietnam-pro-vietnamese-500-normal.woff2) format('woff2');
+}/* be-vietnam-pro-vietnamese-600-normal */
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url(fonts/be-vietnam-pro-vietnamese-600-normal.woff2) format('woff2');
+}
+/* ---- apps/web/src/shared/tokens.css ---- */
+/*
+ * Design tokens: UI/UX guidelines v1.0, Appendix. This is the ONLY place hex colours may appear
+ * (tools/check-tokens.mjs fails the lint otherwise). One colour, one meaning (guidelines §7.2).
+ *
+ * Scheme 1 "Ocean blue" is the default (waiter phone). Scheme 2 "Navy chrome" is selected with
+ * data-chrome="navy" (cashier PC and admin, approved 2026-11-05). Scheme 3 "Night sea" is selected
+ * with data-theme="dark"; its activation (schedule or staff choice) is still an open decision.
+ */
+:root {
+  --font-ui: 'Be Vietnam Pro', -apple-system, 'Segoe UI', Roboto, system-ui, sans-serif;
+  --font-bill-head: 'Roboto Slab', serif;
+  --font-bill-body: Roboto, 'Be Vietnam Pro', sans-serif;
+
+  --brand-red: #c82028;
+  --brand-blue: #0098e0;
+  --brand-blue-light: #68d0f8;
+  --brand-navy: #0e135c;
+  --action: #0077b6;
+  --action-pressed: #005a8c;
+  --on-action: #ffffff;
+  --selected-bg: #e6f4fb;
+  --selected-border: #0098e0;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e3e7ec;
+  --border-strong: #d5dae0;
+  --text: #0f1720;
+  --text-muted: #5b6673;
+  --success: #0f766e;
+  --success-bg: #e0f2f1;
+  --warning: #8a6100;
+  --warning-bg: #fff4d6;
+  --warning-border: #f2a900;
+  --danger: #c82028;
+  --danger-bg: #fdecec;
+  --danger-border-soft: #f5c9cb;
+  --info: #0077b6;
+  --info-bg: #e6f4fb;
+  --appbar-bg: #ffffff;
+  --appbar-text: #0f1720;
+  --appbar-text-muted: #5b6673;
+  --appbar-active: #0077b6;
+  --appbar-active-bg: #e6f4fb;
+}
+:root[data-chrome='navy'] {
+  --appbar-bg: #0e135c;
+  --appbar-text: #ffffff;
+  --appbar-text-muted: #c9d6e8;
+  --appbar-active: #68d0f8;
+  --appbar-active-bg: #1b2a7a;
+}
+:root[data-theme='dark'] {
+  --action: #5bc0f0;
+  --action-pressed: #8ed6f7;
+  --on-action: #0b1b33;
+  --selected-bg: #0f3556;
+  --selected-border: #0098e0;
+  --bg: #0b1b33;
+  --surface: #13253f;
+  --border: #243a5a;
+  --border-strong: #2f4a6e;
+  --text: #e6edf3;
+  --text-muted: #9aa7b4;
+  --success: #34d399;
+  --success-bg: #0f3a33;
+  --warning: #ffc247;
+  --warning-bg: #3d2e0a;
+  --warning-border: #ffc247;
+  --danger: #ff7a7f;
+  --danger-bg: #3f1a20;
+  --danger-border-soft: #5c2a30;
+  --info: #5bc0f0;
+  --info-bg: #0f3556;
+  --appbar-bg: #07132a;
+  --appbar-text: #e6edf3;
+  --appbar-text-muted: #9aa7b4;
+  --appbar-active: #68d0f8;
+  --appbar-active-bg: #0f3556;
+}
+
+/* ---- apps/web/src/styles.css (font and token imports removed) ---- */
+/* Self-hosted Be Vietnam Pro (OFL), latin + vietnamese subsets, 400/500/600 (guidelines §8). */
+
+/* No hex colours here: tokens only. Base grid 4/8 px, radius 8 buttons / 12 cards / 999 chips (§9). */
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+}
+h1,
+h2 {
+  line-height: 1.3;
+  font-weight: 600;
+}
+.money,
+.qty,
+.table-code {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--appbar-text);
+  background: var(--appbar-bg);
+  border-bottom: 1px solid var(--border);
+}
+.appbar button {
+  white-space: nowrap;
+}
+.appbar p {
+  margin: 0;
+  color: var(--appbar-text-muted);
+}
+main {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 16px;
+}
+label {
+  display: block;
+  margin-top: 16px;
+  font-weight: 500;
+}
+input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+button {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 20px;
+  margin-top: 16px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--on-action);
+  background: var(--action);
+  border: 1px solid var(--action);
+  border-radius: 8px;
+}
+button:active {
+  background: var(--action-pressed);
+}
+/* Secondary: outlined. Never two primaries in a view (§9). */
+button.secondary {
+  color: var(--action);
+  background: transparent;
+  border-color: var(--action);
+}
+.appbar button.secondary {
+  margin-top: 0;
+  color: var(--appbar-text);
+  border-color: var(--appbar-text-muted);
+}
+:focus-visible {
+  outline: 3px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+/*
+ * Status blocks: colour + word + border style (§2.3). Solid border = a settled state;
+ * dashed is reserved for "not sent" lines, so errors never use it.
+ */
+.status {
+  margin: 16px 0 0;
+  padding: 12px;
+  font-weight: 500;
+  border-width: 2px;
+  border-style: solid;
+  border-radius: 8px;
+}
+.status-danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+.chip-danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+.status-warning {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+.status strong {
+  display: block;
+}
+.status button {
+  margin-top: 8px;
+}
+/* The action blue is only 4.2:1 on the tinted status backgrounds; use the text colour there. */
+.status button.secondary,
+.job-failed button.secondary {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+/* Connection state is global chrome (§4): a yellow banner above everything. */
+.banner {
+  margin: 0;
+  padding: 8px 16px;
+  font-weight: 600;
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-bottom: 2px solid var(--warning-border);
+}
+
+/* Loading skeleton (§9). Motion honours reduced-motion. */
+.skeleton {
+  height: 24px;
+  margin: 16px 0;
+  background: var(--border);
+  border-radius: 8px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Admin console (UI guidelines §4, §6, §9): compact PC density (14 px text, 40 px rows),
+ * grouped sidebar, breadcrumb, sticky-header data tables, filter chips, import wizard.
+ * Tokens only; state is colour + word + border style (solid for settled states, never dashed).
+ * ---------------------------------------------------------------------------------------------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.muted {
+  color: var(--text-muted);
+}
+
+.console {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  min-height: calc(100vh - 4.5rem);
+  font-size: 0.875rem;
+}
+.sidebar {
+  padding: 16px 8px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.sidebar ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sidebar-group {
+  margin: 0 8px 8px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.sidebar a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--text);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+.sidebar a[aria-current='page'] {
+  font-weight: 600;
+  color: var(--text);
+  background: var(--selected-bg);
+  border-color: var(--selected-border);
+}
+main.console-main {
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 16px 24px;
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+.crumbs li + li::before {
+  content: '›';
+  margin-right: 4px;
+}
+.crumbs a {
+  color: var(--action);
+}
+.console h1 {
+  margin: 8px 0 16px;
+  font-size: 1.5rem;
+}
+.console h2 {
+  margin: 0 0 8px;
+  font-size: 1.125rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field label {
+  margin-top: 0;
+}
+.field small {
+  color: var(--text-muted);
+}
+.field.grow {
+  flex: 1 1 18rem;
+}
+.field.premise {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.field output {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
+select {
+  min-height: 48px;
+  padding: 0 12px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+.toolbar button,
+.actions button {
+  margin-top: 0;
+}
+.toolbar .chips,
+.toolbar .actions {
+  align-self: flex-end;
+}
+.chips,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.actions {
+  margin-top: 16px;
+}
+.toolbar .actions {
+  margin-top: 0;
+}
+.chip-button {
+  padding: 0 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+.chip-button[aria-pressed='true'] {
+  font-weight: 600;
+  color: var(--text);
+  background: var(--selected-bg);
+  border: 2px solid var(--selected-border);
+}
+.count {
+  margin: 12px 0 8px;
+  color: var(--text-muted);
+}
+
+.chip {
+  display: inline-block;
+  margin: 1px 4px 1px 0;
+  padding: 2px 8px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid;
+  border-radius: 999px;
+}
+.chip-ok {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+.chip-warning {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
+.table-scroll {
+  max-height: calc(100vh - 22rem);
+  min-height: 12rem;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+table.data {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+table.data th,
+table.data td {
+  height: 40px;
+  padding: 0 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+table.data thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border-bottom: 2px solid var(--border-strong);
+}
+table.data th.code,
+table.data tbody th[scope='row'] {
+  font-weight: 600;
+}
+table.data .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+table.data tr.row-attention td,
+table.data tr.row-attention th {
+  background: var(--warning-bg);
+}
+.money {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+button.cell-edit {
+  min-width: 0;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--text);
+  text-align: right;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+button.cell-edit:hover {
+  border-color: var(--border-strong);
+}
+.cell-editor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cell-editor input {
+  width: 8rem;
+  min-height: 40px;
+  text-align: right;
+}
+.cell-editor button {
+  min-height: 40px;
+  margin-top: 0;
+  padding: 0 12px;
+}
+/* the error floats under the field instead of stretching the row */
+.cell-editor .status {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 2;
+  width: 17rem;
+  margin: 0;
+  white-space: normal;
+  text-align: left;
+}
+.saved {
+  margin-left: 8px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.status-ok {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+.invitation {
+  max-width: 32rem;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* Import wizard: the current step is solid and labelled; finished steps say so in words. */
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+.step {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 11rem;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+}
+.step small {
+  display: block;
+  color: var(--text-muted);
+}
+.step-no {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+.step-current {
+  border: 2px solid var(--action);
+  font-weight: 600;
+}
+.step-current .step-no {
+  color: var(--on-action);
+  background: var(--action);
+  border-color: var(--action);
+}
+.step-done {
+  border-color: var(--success);
+}
+.step-done .step-no {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.summary div {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.summary dt {
+  color: var(--text-muted);
+}
+.summary dd {
+  margin: 4px 0 0;
+  font-size: 1.25rem;
+}
+input[type='file'] {
+  min-height: 48px;
+  padding: 8px 12px;
+}
+
+@media (max-width: 900px) {
+  .console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  main.console-main {
+    padding: 16px;
+  }
+}
+
+/* ---- S02 accounts: forms, panels, the phone staff cards ---- */
+.panel {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.panel h2 {
+  margin-top: 0;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 16px;
+}
+fieldset.group {
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+fieldset.group legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+}
+.check input[type='checkbox'] {
+  width: 24px;
+  height: 24px;
+}
+.block {
+  display: block;
+  font-weight: 400;
+}
+button.row-action {
+  min-height: 40px;
+  margin-top: 0;
+  /* opaque, so the label keeps its contrast on tinted (attention) rows */
+  background: var(--surface);
+}
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 20px;
+  font-weight: 600;
+  color: var(--on-action);
+  text-decoration: none;
+  background: var(--action);
+  border-radius: 8px;
+}
+.cards {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 16px 0 0;
+  list-style: none;
+}
+.card {
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.card-head {
+  display: flex;
+  flex-direction: column;
+}
+.ask {
+  margin-top: 8px;
+}
+a.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  color: var(--action);
+  font-weight: 600;
+}
+
+/* ---- S01 forms ---- */
+.table-scroll.short {
+  max-height: 22rem;
+  min-height: 0;
+}
+.subform {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.inline-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+}
+.inline-add button {
+  margin-top: 0;
+}
+.invitation h3 {
+  margin: 0 0 4px;
+}
+
+/* ---- S03 phone ordering ---- */
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.tabs .chip-button {
+  flex: none;
+  min-height: 44px;
+}
+.tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  padding: 0;
+  margin: 8px 0 16px;
+  list-style: none;
+}
+/* Table states: free = plain 1px, in service = 2px blue, awaiting payment = 2px yellow (guidelines §7). */
+.table-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  min-height: 88px;
+  padding: 8px 4px;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+}
+.table-tile .table-code {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.table-tile .table-word,
+.table-tile .table-state,
+.table-tile .table-extra {
+  font-size: 0.875rem;
+}
+.table-tile.table-open {
+  background: var(--selected-bg);
+  border: 2px solid var(--selected-border);
+}
+.table-tile.table-awaiting_payment,
+.table-tile.table-bill_printed,
+.table-tile.table-split {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border: 2px solid var(--warning-border);
+}
+.guest-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+.guest-grid button {
+  min-height: 56px;
+  font-size: 1.25rem;
+}
+.order-head h2 {
+  margin-bottom: 0;
+}
+.items {
+  padding: 0;
+  margin: 8px 0;
+  list-style: none;
+}
+button.item-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  margin-bottom: 4px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+button.item-row small {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.basket {
+  padding: 12px;
+  margin: 16px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.basket-lines,
+.sent-lines {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+/* Unsent lines: dashed yellow border, word "Chưa gửi" (guidelines §2.3). */
+.basket-line {
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1.5px dashed var(--warning-border);
+  border-radius: 8px;
+}
+.basket-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.basket-main strong {
+  flex: 1 1 8rem;
+}
+.stepper {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.stepper output {
+  min-width: 2rem;
+  font-weight: 700;
+  text-align: center;
+}
+.note-editor input {
+  width: 100%;
+}
+button.send {
+  width: 100%;
+  min-height: 56px;
+  margin-top: 8px;
+  font-size: 1.125rem;
+}
+.sent-lines li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sent h4 {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+}
+
+/* ---- S01 gaps: serving presets list and the drawn floor plan ---- */
+.note-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.note-list li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.plan-scroll {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.plan-canvas {
+  position: relative;
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+}
+.plan-table {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0 2px;
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--text);
+  border-radius: 8px;
+}
+.plan-table[aria-pressed='true'] {
+  border-width: 3px;
+  border-color: var(--action);
+}
+
+/* ---- S04 kitchen tickets: the cashier alert and the send history ---- */
+.print-alert {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+}
+.print-alert .actions {
+  margin-top: 8px;
+}
+.jobs {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 12px 0;
+  list-style: none;
+}
+/* State by colour + word + border: printed plain 1px, waiting 2px blue, failed 2px solid red (never dashed). */
+.job {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+}
+.job-main {
+  display: grid;
+  gap: 2px;
+}
+.job-waiting {
+  border: 2px solid var(--brand-blue);
+}
+.job-failed {
+  background: var(--danger-bg);
+  border: 2px solid var(--danger);
+}
+.job-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-weight: 600;
+}
+.job-failed .job-state {
+  color: var(--danger);
+}
+.job .actions {
+  margin-top: 0;
+}
+
+/* S05: rounds on the device that the server has not confirmed (ADR-016). Not sent = dashed warning border + the
+   word; refused = solid danger border + the reason (dashed is reserved for "not sent"). */
+.queued {
+  margin: 16px 0;
+}
+.queued-list,
+.queued-lines {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.queued-round {
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border-radius: 8px;
+}
+.queued-not_sent,
+.queued-sending {
+  border: 1.5px dashed var(--warning-border);
+}
+.queued-rejected {
+  border: 2px solid var(--danger);
+}
+.queued-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.queued-reason {
+  color: var(--danger);
+  font-weight: 500;
+}
+.price-changed {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.queue-banner {
+  margin: 12px 0;
+}
+.tile-unsent {
+  font-weight: 600;
+}
+
+/* S06: the one-time pairing code, big enough to read off a screen and type on a phone (ADR-017). */
+.pair-code {
+  display: block;
+  margin: 8px 0;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+}
+
+/* S07: Today's prices rows, price notes on the order screen (ADR-018). State is colour + word + border. */
+.today-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.today-row {
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.today-row.today-awaiting {
+  border: 2px solid var(--warning-border);
+}
+.today-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.today-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.today-actions {
+  margin-top: 12px;
+}
+.item-price {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.item-price small {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.market-banner {
+  margin: 12px 0;
+}
+
+/* S08: the cashier's checkout (ADR-019). State is colour + word + border; the QR is black on white in both themes. */
+.checkout {
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 900px) {
+  .checkout {
+    grid-template-columns: minmax(18rem, 24rem) 1fr;
+    align-items: start;
+  }
+}
+.checkout-rows,
+.checkout-lines {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+button.checkout-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  margin-bottom: 6px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+button.checkout-row[aria-pressed='true'] {
+  background: var(--selected-bg);
+  border: 2px solid var(--selected-border);
+}
+button.checkout-row.checkout-late {
+  border: 2px solid var(--danger);
+}
+.checkout-code {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.checkout-row .money {
+  margin-left: auto;
+  font-weight: 600;
+}
+.chip-state {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.checkout-card {
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.checkout-lines li {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.checkout-total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.25rem;
+}
+.bill-box,
+.payment {
+  padding: 12px;
+  margin-top: 16px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+}
+.qr-figure {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  margin: 8px 0;
+}
+.qr-figure figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qr {
+  max-width: 100%;
+  height: auto;
+}
+.pay-line {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.denominations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.change {
+  margin: 8px 0 0;
+}
+.late-banner ul {
+  padding-left: 1.25rem;
+  margin: 4px 0 0;
+}
+
+/* S09: discounts on the cashier screen (ADR-020). Overlaps are a warning block with a choice; totals are plain text. */
+.discount-panel,
+.manual-discount {
+  padding: 12px;
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.offer-list,
+.applied-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.applied-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.overlap {
+  margin: 8px 0;
+  border: 1px solid var(--warning-border);
+}
+.line-discount {
+  flex-basis: 100%;
+  color: var(--text-muted);
+}
+.discount-totals {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 0;
+}
+.discount-totals div {
+  display: flex;
+  justify-content: space-between;
+}
+.discount-totals dd {
+  margin: 0;
+}
+.payable {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+/* S10: cancelling (ADR-021). A cancelled part stays on screen struck through, with the word; waiting = "Đang hủy". */
+.cancel-sheet {
+  padding: 12px;
+  margin: 12px 0;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+}
+.cancel-sheet fieldset.reasons {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.cancelled-line {
+  color: var(--text-muted);
+}
+.cancelled-line s {
+  text-decoration-thickness: 2px;
+}
+.cancel-table {
+  margin-top: 12px;
+}
+
+/* S11: approvals (ADR-022). A waiting request is the word "Chờ duyệt hủy" with a dashed border: it is not final. */
+.approval-choices {
+  padding: 12px;
+  margin: 12px 0;
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+}
+.approval-choices fieldset.reasons {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.approvals {
+  display: grid;
+  gap: 20px;
+}
+.approval-list {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.approval-request {
+  padding: 12px;
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+}
+.approval-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.approval-answers {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 8px 0;
+  list-style: none;
+}
+
+/* S12: returns (ADR-023). A drink waiting for the store is the word "Chờ kho xác nhận" and still charged. */
+.return-sheet fieldset.reasons small {
+  display: block;
+  color: var(--text-muted);
+}
+.return-awaiting {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* S14 (ADR-025): the split grid, one quantity box per group */
+.split-sheet .table-scroll {
+  max-height: none;
+  min-height: 0;
+}
+.split-grid {
+  width: 100%;
+  border-collapse: collapse;
+}
+.split-grid th,
+.split-grid td {
+  padding: 6px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+.split-grid input {
+  width: 5rem;
+  min-height: 44px;
+}
+.split-grid tfoot td,
+.split-grid tfoot th {
+  border-bottom: 0;
+}
